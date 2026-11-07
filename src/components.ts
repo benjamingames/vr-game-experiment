@@ -8,6 +8,7 @@ import {
   RCRemote,
   ResetButton,
   Resettable,
+  SkyCloud,
 } from './ball-components.js';
 
 export default defineComponents([
@@ -19,4 +20,5 @@ export default defineComponents([
   RCControl,
   FacePart,
   FaceResetButton,
+  SkyCloud,
 ]);

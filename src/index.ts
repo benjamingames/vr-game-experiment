@@ -2,6 +2,7 @@ import { LocomotionSystem, TurningMethod, World } from '@iwsdk/core';
 import projectOptions from 'virtual:iwsdk-project';
 import {
   buildRoom,
+  CloudSystem,
   DartSystem,
   RCCarSystem,
   ResetSystem,
@@ -19,6 +20,7 @@ World.create(
     locomotion.config.turningSpeed.value = 120;
   }
 
+  world.registerSystem(CloudSystem);
   world.registerSystem(DartSystem);
   world.registerSystem(RCCarSystem);
   world.registerSystem(StretchyFaceSystem);

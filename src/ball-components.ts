@@ -47,3 +47,10 @@ export const FacePart = createComponent('FacePart', {
 
 /** Floating button next to the stretchy head that triggers an elastic wobble snap-back. */
 export const FaceResetButton = createComponent('FaceResetButton', {});
+
+/** A 3D cloud that drifts across the sky above the arched ceiling windows. */
+export const SkyCloud = createComponent('SkyCloud', {
+  speed: { type: Types.Float32, default: 0.45 },
+  baseY: { type: Types.Float32, default: 5.2 },
+  phase: { type: Types.Float32, default: 0 },
+});

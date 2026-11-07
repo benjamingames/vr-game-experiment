@@ -1,5 +1,6 @@
 import {
   BoxGeometry,
+  CanvasTexture,
   Color,
   CylinderGeometry,
   DistanceGrabbable,
@@ -20,6 +21,7 @@ import {
   Pressed,
   Quaternion,
   RayInteractable,
+  RepeatWrapping,
   SphereGeometry,
   Vector3,
   World,
@@ -34,10 +36,12 @@ import {
   RCRemote,
   ResetButton,
   Resettable,
+  SkyCloud,
 } from './ball-components.js';
 
 // ---- Tweak these to play around -------------------------------------------
 const ROOM = { width: 6, depth: 6, height: 3 }; // meters; player starts at the center
+const ARCH_PEAK_HEIGHT = 4.35; // apex of the great-room arched ceiling
 const BALL_RADIUS = 0.07;
 const BALL_BOUNCE = 0.6; // 0 = dead, 1 = superball
 const BALL_COLORS = [0xff4d4d, 0x4da6ff, 0xffd24d];
@@ -48,7 +52,7 @@ const DART_FLIGHT_GRAVITY = 0.15; // low gravity while flying so darts stay flat
 const DARTBOARD = {
   x: 0,
   y: 1.65,
-  z: -ROOM.depth / 2 + 0.02,
+  z: -ROOM.depth / 2 + 0.035,
   radius: 0.42,
   thickness: 0.04,
 };
@@ -84,16 +88,10 @@ function staticBox(
 }
 
 export function buildRoom(world: World) {
-  const { width: W, depth: D, height: H } = ROOM;
-  const t = 0.2; // wall thickness
+  const { depth: D } = ROOM;
 
-  // Floor (top surface at y = 0), walls, ceiling
-  staticBox(world, [W, t, D], [0, -t / 2, 0], 0x8a7560);
-  staticBox(world, [W, H, t], [0, H / 2, -D / 2 - t / 2], 0xd9d4cc);
-  staticBox(world, [W, H, t], [0, H / 2, D / 2 + t / 2], 0xd9d4cc);
-  staticBox(world, [t, H, D], [-W / 2 - t / 2, H / 2, 0], 0xcfd8d9);
-  staticBox(world, [t, H, D], [W / 2 + t / 2, H / 2, 0], 0xcfd8d9);
-  staticBox(world, [W, t, D], [0, H + t / 2, 0], 0xf2f2f2, false);
+  // Tiled light-gray floor, oak wood paneled walls, arched ceiling with 2 skylights & 3D clouds
+  buildArchitecture(world);
 
   // Table in front of the player
   staticBox(
@@ -949,7 +947,447 @@ export class ResetSystem extends createSystem({
     // Anything that tunnels out of the room comes back on its own
     for (const e of this.queries.items.entities) {
       const y = e.object3D?.position.y ?? 0;
-      if (y < -1 || y > ROOM.height + 1) this.resetOne(e);
+      if (y < -1 || y > ARCH_PEAK_HEIGHT + 1.5) this.resetOne(e);
+    }
+  }
+}
+
+// ---- Room Architecture: Tiled Gray Floor, Oak Paneling, Arched Skylight Ceiling & 3D Clouds ----
+
+function createTiledFloorMaterial(): MeshStandardMaterial {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d')!;
+
+  // Grout background
+  ctx.fillStyle = '#9aa1a9';
+  ctx.fillRect(0, 0, 512, 512);
+
+  // 4x4 tiles per repeat (12x12 tiles across the 6m x 6m floor = 0.5m tiles)
+  const cells = 4;
+  const cell = 512 / cells;
+  const grout = 5;
+  const shades = ['#d9dde2', '#d2d7dc', '#dfe3e8', '#d5dae0'];
+
+  for (let r = 0; r < cells; r++) {
+    for (let c = 0; c < cells; c++) {
+      const x = c * cell + grout;
+      const y = r * cell + grout;
+      const w = cell - grout * 2;
+      const h = cell - grout * 2;
+
+      ctx.fillStyle = shades[(r * 3 + c) % shades.length];
+      ctx.fillRect(x, y, w, h);
+
+      // Subtle bevel edge highlight (top/left) & shadow (bottom/right)
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+      ctx.fillRect(x, y, w, 3);
+      ctx.fillRect(x, y, 3, h);
+
+      ctx.fillStyle = 'rgba(80, 90, 100, 0.22)';
+      ctx.fillRect(x, y + h - 3, w, 3);
+      ctx.fillRect(x + w - 3, y, 3, h);
+    }
+  }
+
+  const tex = new CanvasTexture(canvas);
+  tex.wrapS = RepeatWrapping;
+  tex.wrapT = RepeatWrapping;
+  tex.repeat.set(3, 3);
+  return new MeshStandardMaterial({
+    map: tex,
+    roughness: 0.35,
+    metalness: 0.05,
+  });
+}
+
+function createOakMaterial(
+  baseHex = '#a86b32',
+  darkHex = '#7c491b',
+  lightHex = '#c28447',
+  repeatX = 2,
+  repeatY = 1,
+  roughness = 0.55,
+): MeshStandardMaterial {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 256;
+  const ctx = canvas.getContext('2d')!;
+
+  ctx.fillStyle = baseHex;
+  ctx.fillRect(0, 0, 256, 256);
+
+  // Vertical warm oak wood grain fibers & cathedral streaks
+  for (let i = 0; i < 90; i++) {
+    const x = ((i * 37) % 256);
+    const w = 1 + (i % 3);
+    ctx.fillStyle = i % 2 === 0 ? darkHex : lightHex;
+    ctx.globalAlpha = 0.14 + (i % 4) * 0.04;
+    ctx.fillRect(x, 0, w, 256);
+  }
+  ctx.globalAlpha = 1.0;
+
+  const tex = new CanvasTexture(canvas);
+  tex.wrapS = RepeatWrapping;
+  tex.wrapT = RepeatWrapping;
+  tex.repeat.set(repeatX, repeatY);
+  return new MeshStandardMaterial({ map: tex, roughness });
+}
+
+function archHeightAtX(x: number): number {
+  const norm = x / (ROOM.width / 2);
+  return ROOM.height + (ARCH_PEAK_HEIGHT - ROOM.height) * (1 - norm * norm);
+}
+
+function archSlopeAngleAtX(x: number): number {
+  // dy/dx of H + PeakDelta * (1 - (x / 3)^2) = -2 * PeakDelta * x / 9
+  const dydx = (-2 * (ARCH_PEAK_HEIGHT - ROOM.height) * x) / ((ROOM.width / 2) ** 2);
+  return Math.atan(dydx);
+}
+
+function buildArchitecture(world: World) {
+  const { width: W, depth: D, height: H } = ROOM;
+  const t = 0.2;
+
+  const floorMat = createTiledFloorMaterial();
+  const oakWallMat = createOakMaterial('#a96d35', '#7e4b1c', '#c6884a', 4, 2, 0.55);
+  const oakTrimMat = createOakMaterial('#834e1f', '#5e3512', '#9e632d', 2, 1, 0.48);
+  const oakPanelMat = createOakMaterial('#b87b40', '#8c5522', '#d19558', 1, 1, 0.5);
+  const oakCeilingMat = createOakMaterial('#9f642c', '#744419', '#ba7c40', 2, 3, 0.55);
+
+  // 1. Light-Gray Tiled Floor (top surface at y = 0)
+  const floorMesh = new Mesh(new BoxGeometry(W, t, D), floorMat);
+  floorMesh.position.set(0, -t / 2, 0);
+  floorMesh.receiveShadow = true;
+  const floorEntity = world.createTransformEntity(floorMesh);
+  floorEntity.addComponent(PhysicsShape, {
+    shape: PhysicsShapeType.Box,
+    dimensions: [W, t, D],
+    friction: 0.6,
+    restitution: 0.3,
+  });
+  floorEntity.addComponent(PhysicsBody, { state: PhysicsState.Static });
+  floorEntity.addComponent(LocomotionEnvironment);
+
+  // 2. Four Oak Wood Paneled Walls with 3D wainscoting, rails, stiles & raised panels
+  const addOakWall = (
+    size: [number, number, number],
+    pos: [number, number, number],
+    alongX: boolean,
+    inwardSign: number,
+  ) => {
+    const wallMesh = new Mesh(new BoxGeometry(...size), oakWallMat);
+    wallMesh.position.set(...pos);
+    wallMesh.castShadow = true;
+    wallMesh.receiveShadow = true;
+
+    const span = alongX ? W : D;
+    const faceOffset = (t / 2 + 0.008) * inwardSign;
+
+    // Horizontal oak rails: baseboard, chair rail, and upper frieze rail
+    const railHeights: Array<[number, number]> = [
+      [-H / 2 + 0.07, 0.14], // Baseboard
+      [-H / 2 + 1.05, 0.08], // Chair rail
+      [H / 2 - 0.07, 0.14],  // Crown cornice rail
+    ];
+    railHeights.forEach(([ry, rh]) => {
+      const railGeo = alongX
+        ? new BoxGeometry(span, rh, 0.022)
+        : new BoxGeometry(0.022, rh, span);
+      const rail = new Mesh(railGeo, oakTrimMat);
+      rail.position.set(
+        alongX ? 0 : faceOffset,
+        ry,
+        alongX ? faceOffset : 0,
+      );
+      wallMesh.add(rail);
+    });
+
+    // Vertical oak stiles and recessed/raised oak panels (6 bays across 6m)
+    const bays = 6;
+    const bayWidth = span / bays;
+    for (let i = 0; i <= bays; i++) {
+      const coord = -span / 2 + i * bayWidth;
+      const stileGeo = alongX
+        ? new BoxGeometry(0.07, H, 0.02)
+        : new BoxGeometry(0.02, H, 0.07);
+      const stile = new Mesh(stileGeo, oakTrimMat);
+      stile.position.set(
+        alongX ? coord : faceOffset,
+        0,
+        alongX ? faceOffset : coord,
+      );
+      wallMesh.add(stile);
+
+      if (i < bays) {
+        const bayCenter = coord + bayWidth / 2;
+        const pw = bayWidth - 0.16;
+
+        // Lower wainscoting raised oak panel
+        const lowerGeo = alongX
+          ? new BoxGeometry(pw, 0.68, 0.014)
+          : new BoxGeometry(0.014, 0.68, pw);
+        const lowerPanel = new Mesh(lowerGeo, oakPanelMat);
+        lowerPanel.position.set(
+          alongX ? bayCenter : faceOffset * 0.85,
+          -H / 2 + 0.56,
+          alongX ? faceOffset * 0.85 : bayCenter,
+        );
+        wallMesh.add(lowerPanel);
+
+        // Upper tall raised oak panel
+        const upperGeo = alongX
+          ? new BoxGeometry(pw, 1.58, 0.014)
+          : new BoxGeometry(0.014, 1.58, pw);
+        const upperPanel = new Mesh(upperGeo, oakPanelMat);
+        upperPanel.position.set(
+          alongX ? bayCenter : faceOffset * 0.85,
+          -H / 2 + 1.98,
+          alongX ? faceOffset * 0.85 : bayCenter,
+        );
+        wallMesh.add(upperPanel);
+      }
+    }
+
+    // If front or back wall (alongX), fill the arched gable above y = H up to the ceiling arch
+    if (alongX) {
+      const gableStrips = 12;
+      const stripW = W / gableStrips;
+      for (let s = 0; s < gableStrips; s++) {
+        const sx = -W / 2 + (s + 0.5) * stripW;
+        const archH = archHeightAtX(sx) - H;
+        if (archH > 0.02) {
+          const gableStrip = new Mesh(
+            new BoxGeometry(stripW + 0.01, archH, t),
+            oakWallMat,
+          );
+          gableStrip.position.set(sx, H / 2 + archH / 2, 0);
+          wallMesh.add(gableStrip);
+        }
+      }
+    }
+
+    const we = world.createTransformEntity(wallMesh);
+    we.addComponent(PhysicsShape, {
+      shape: PhysicsShapeType.Box,
+      dimensions: size,
+      friction: 0.6,
+      restitution: 0.3,
+    });
+    we.addComponent(PhysicsBody, { state: PhysicsState.Static });
+    we.addComponent(LocomotionEnvironment);
+  };
+
+  addOakWall([W, H, t], [0, H / 2, -D / 2 - t / 2], true, 1);  // Far wall (-Z)
+  addOakWall([W, H, t], [0, H / 2, D / 2 + t / 2], true, -1);  // Back wall (+Z)
+  addOakWall([t, H, D], [-W / 2 - t / 2, H / 2, 0], false, 1); // Left wall (-X)
+  addOakWall([t, H, D], [W / 2 + t / 2, H / 2, 0], false, -1); // Right wall (+X)
+
+  // Invisible high physics ceiling collider above the arch peak to keep high throws in bounds
+  const ceilColliderMesh = new Mesh(new BoxGeometry(W, t, D), oakTrimMat);
+  ceilColliderMesh.visible = false;
+  ceilColliderMesh.position.set(0, ARCH_PEAK_HEIGHT + 0.35, 0);
+  const ceilCollider = world.createTransformEntity(ceilColliderMesh);
+  ceilCollider.addComponent(PhysicsShape, {
+    shape: PhysicsShapeType.Box,
+    dimensions: [W, t, D],
+    friction: 0.5,
+    restitution: 0.3,
+  });
+  ceilCollider.addComponent(PhysicsBody, { state: PhysicsState.Static });
+
+  // 3. Great-Room Arched Ceiling with 2 Ceiling Windows (Skylights)
+  // Window 1 spans z in [-2.05, -0.45], x in [-1.5, 1.5]
+  // Window 2 spans z in [+0.45, +2.05], x in [-1.5, 1.5]
+  const archRoot = new Mesh(new BoxGeometry(0.01, 0.01, 0.01), oakTrimMat);
+  const glassMat = new MeshStandardMaterial({
+    color: new Color(0x9ad4ff),
+    roughness: 0.1,
+    metalness: 0.1,
+    transparent: true,
+    opacity: 0.18,
+  });
+  const windowFrameMat = mat(0x3b2310, 0.45);
+
+  const strips = 12;
+  const dx = W / strips; // 0.5m per strip
+
+  const addArchPanel = (
+    stripIdx: number,
+    zStart: number,
+    zEnd: number,
+    isWindow: boolean,
+  ) => {
+    const cx = -W / 2 + (stripIdx + 0.5) * dx;
+    const cy = archHeightAtX(cx);
+    const angle = archSlopeAngleAtX(cx);
+    const segWidth = dx / Math.cos(angle) + 0.012;
+    const zLen = zEnd - zStart;
+    const cz = (zStart + zEnd) * 0.5;
+
+    const panelMesh = new Mesh(
+      new BoxGeometry(segWidth, isWindow ? 0.012 : 0.045, zLen),
+      isWindow ? glassMat : oakCeilingMat,
+    );
+    panelMesh.position.set(cx, cy, cz);
+    panelMesh.rotation.z = angle;
+    panelMesh.castShadow = false;
+    panelMesh.receiveShadow = !isWindow;
+    archRoot.add(panelMesh);
+  };
+
+  for (let s = 0; s < strips; s++) {
+    const isWindowBand = s >= 3 && s <= 8; // x from -1.5m to +1.5m
+    if (!isWindowBand) {
+      addArchPanel(s, -D / 2, D / 2, false);
+    } else {
+      // Solid oak ceiling planks around the 2 ceiling windows
+      addArchPanel(s, -D / 2, -2.05, false);
+      addArchPanel(s, -2.05, -0.45, true); // Ceiling Window 1 (Front Skylight)
+      addArchPanel(s, -0.45, 0.45, false); // Central oak arch bridge
+      addArchPanel(s, 0.45, 2.05, true);   // Ceiling Window 2 (Back Skylight)
+      addArchPanel(s, 2.05, D / 2, false);
+    }
+  }
+
+  // Exposed curved oak timber arch ribs across the great-room vault
+  const ribZPositions = [-2.92, -2.05, -1.25, -0.45, 0, 0.45, 1.25, 2.05, 2.92];
+  ribZPositions.forEach((rz) => {
+    const isMainTruss =
+      Math.abs(rz) < 0.01 ||
+      Math.abs(Math.abs(rz) - 2.05) < 0.01 ||
+      Math.abs(Math.abs(rz) - 0.45) < 0.01 ||
+      Math.abs(Math.abs(rz) - 2.92) < 0.01;
+    const ribThickness = isMainTruss ? 0.11 : 0.055;
+    const ribDepth = isMainTruss ? 0.14 : 0.065;
+
+    for (let s = 0; s < strips; s++) {
+      const cx = -W / 2 + (s + 0.5) * dx;
+      const cy = archHeightAtX(cx) - ribDepth * 0.4;
+      const angle = archSlopeAngleAtX(cx);
+      const segWidth = dx / Math.cos(angle) + 0.015;
+      const ribSeg = new Mesh(
+        new BoxGeometry(segWidth, ribDepth, ribThickness),
+        isMainTruss ? oakTrimMat : windowFrameMat,
+      );
+      ribSeg.position.set(cx, cy, rz);
+      ribSeg.rotation.z = angle;
+      ribSeg.castShadow = false;
+      archRoot.add(ribSeg);
+    }
+  });
+
+  // Longitudinal oak ridge beam at the apex (x = 0) and window side frame beams (x = ±1.5m)
+  const ridgeBeam = new Mesh(
+    new BoxGeometry(0.14, 0.16, D),
+    oakTrimMat,
+  );
+  ridgeBeam.position.set(0, ARCH_PEAK_HEIGHT - 0.05, 0);
+  ridgeBeam.castShadow = false;
+  archRoot.add(ridgeBeam);
+
+  [-1.5, 1.5].forEach((wx) => {
+    const wy = archHeightAtX(wx) - 0.04;
+    const angle = archSlopeAngleAtX(wx);
+    const purlin = new Mesh(new BoxGeometry(0.1, 0.12, D), oakTrimMat);
+    purlin.position.set(wx, wy, 0);
+    purlin.rotation.z = angle;
+    purlin.castShadow = false;
+    archRoot.add(purlin);
+  });
+
+  // Bright Daytime Sky Canopy high above the 2 ceiling windows
+  const skyCanopy = new Mesh(
+    new BoxGeometry(18, 0.08, 12),
+    new MeshStandardMaterial({
+      color: new Color(0x68b9ff),
+      emissive: new Color(0x4aa3f0),
+      emissiveIntensity: 0.75,
+      roughness: 1.0,
+    }),
+  );
+  skyCanopy.position.set(0, 6.7, 0);
+  skyCanopy.castShadow = false;
+  skyCanopy.receiveShadow = false;
+  archRoot.add(skyCanopy);
+
+  world.createTransformEntity(archRoot);
+
+  // 4. Fluffy 3D Clouds that float across the sky above the two ceiling windows
+  const cloudConfigs: Array<{ x: number; y: number; z: number; speed: number; scale: number }> = [
+    { x: -3.2, y: 5.15, z: -1.25, speed: 0.42, scale: 1.0 },
+    { x: 1.4, y: 5.45, z: -1.1, speed: 0.34, scale: 1.15 },
+    { x: -1.1, y: 5.1, z: 1.2, speed: 0.48, scale: 0.95 },
+    { x: 3.6, y: 5.38, z: 1.35, speed: 0.38, scale: 1.1 },
+    { x: -6.0, y: 5.3, z: -1.35, speed: 0.45, scale: 1.05 },
+    { x: 6.2, y: 5.22, z: 1.1, speed: 0.4, scale: 0.9 },
+  ];
+
+  const cloudMat = new MeshStandardMaterial({
+    color: new Color(0xffffff),
+    emissive: new Color(0xdceeff),
+    emissiveIntensity: 0.35,
+    roughness: 0.85,
+  });
+
+  const puffOffsets: Array<[number, number, number, number]> = [
+    [0, 0.08, 0, 0.46],
+    [-0.38, 0.0, 0.06, 0.36],
+    [0.4, 0.02, -0.04, 0.38],
+    [-0.18, 0.2, -0.1, 0.34],
+    [0.2, 0.18, 0.12, 0.35],
+    [-0.65, -0.06, -0.05, 0.28],
+    [0.68, -0.05, 0.08, 0.29],
+  ];
+
+  cloudConfigs.forEach((cfg, idx) => {
+    const rootPuff = new Mesh(
+      new SphereGeometry(0.46 * cfg.scale, 18, 14),
+      cloudMat,
+    );
+    rootPuff.scale.set(1.25, 0.72, 0.95);
+    rootPuff.position.set(cfg.x, cfg.y, cfg.z);
+    rootPuff.castShadow = false;
+
+    for (let p = 1; p < puffOffsets.length; p++) {
+      const [px, py, pz, pr] = puffOffsets[p];
+      const puff = new Mesh(
+        new SphereGeometry(pr * cfg.scale, 16, 12),
+        cloudMat,
+      );
+      puff.position.set(px * cfg.scale, py * cfg.scale, pz * cfg.scale);
+      puff.castShadow = false;
+      rootPuff.add(puff);
+    }
+
+    const ce = world.createTransformEntity(rootPuff);
+    ce.addComponent(SkyCloud, {
+      speed: cfg.speed,
+      baseY: cfg.y,
+      phase: idx * 1.3,
+    });
+  });
+}
+
+/** Gently drifts the 3D clouds across the sky above the arched ceiling windows. */
+export class CloudSystem extends createSystem({
+  clouds: { required: [SkyCloud] },
+}) {
+  update(delta: number, time: number) {
+    const dt = Math.min(delta, 0.05);
+    for (const e of this.queries.clouds.entities) {
+      const obj = e.object3D;
+      if (!obj) continue;
+      const speed = e.getValue(SkyCloud, 'speed') ?? 0.4;
+      const baseY = e.getValue(SkyCloud, 'baseY') ?? 5.2;
+      const phase = e.getValue(SkyCloud, 'phase') ?? 0;
+
+      obj.position.x += speed * dt;
+      if (obj.position.x > 7.8) {
+        obj.position.x = -7.8;
+      }
+      obj.position.y = baseY + Math.sin(time * 0.7 + phase) * 0.06;
     }
   }
 }
