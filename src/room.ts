@@ -6,6 +6,7 @@ import {
   Entity,
   Grabbed,
   InputComponent,
+  LocomotionEnvironment,
   Mesh,
   MeshStandardMaterial,
   MovementMode,
@@ -76,6 +77,7 @@ function staticBox(
     restitution: 0.3,
   });
   e.addComponent(PhysicsBody, { state: PhysicsState.Static });
+  e.addComponent(LocomotionEnvironment);
   return e;
 }
 
@@ -778,41 +780,9 @@ export class RCCarSystem extends createSystem({
       }
     }
 
-    // 2. If the remote control itself is held in hand, also allow thumbstick driving
-    for (const rem of this.queries.remotes.entities) {
-      if (!rem.hasComponent(Grabbed)) continue;
-      const rightPad = this.input.xr.gamepads.right;
-      const leftPad = this.input.xr.gamepads.left;
-      const axesR = rightPad?.getAxesValues(InputComponent.Thumbstick);
-      const axesL = leftPad?.getAxesValues(InputComponent.Thumbstick);
-      const stickX =
-        Math.abs(axesR?.x ?? 0) >= Math.abs(axesL?.x ?? 0)
-          ? (axesR?.x ?? 0)
-          : (axesL?.x ?? 0);
-      const stickY =
-        Math.abs(axesR?.y ?? 0) >= Math.abs(axesL?.y ?? 0)
-          ? (axesR?.y ?? 0)
-          : (axesL?.y ?? 0);
-
-      if (Math.abs(stickX) > 0.15) steerInput = -stickX;
-      if (stickY > 0.15) gasInput = Math.max(gasInput, stickY);
-      else if (stickY < -0.15) brakeInput = Math.max(brakeInput, -stickY);
-
-      if (
-        rightPad?.getButtonDown(InputComponent.B_Button) ||
-        leftPad?.getButtonDown(InputComponent.Y_Button)
-      ) {
-        for (const car of this.queries.cars.entities) {
-          const cur = car.getValue(RCCar, 'throttle') ?? 0.6;
-          const next = cur >= 0.95 ? 0.2 : Math.round((cur + 0.2) * 10) / 10;
-          car.setValue(RCCar, 'throttle', next);
-        }
-      }
-    }
-
     steerInput = Math.max(-1, Math.min(1, steerInput));
 
-    // 3. Sync remote control buttons & throttle visuals to the remote body
+    // 2. Sync remote control buttons & throttle visuals to the remote body
     let currentThrottle = 0.6;
     for (const car of this.queries.cars.entities) {
       currentThrottle = car.getValue(RCCar, 'throttle') ?? 0.6;
