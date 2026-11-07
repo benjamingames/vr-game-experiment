@@ -7,6 +7,7 @@ import {
   DesktopFirstPersonSystem,
   RCCarSystem,
   ResetSystem,
+  SettingsAndHandsSystem,
   StretchyFaceSystem,
   ToyStationsSystem,
 } from './room.js';
@@ -29,6 +30,7 @@ World.create(
   world.registerSystem(RCCarSystem);
   world.registerSystem(StretchyFaceSystem);
   world.registerSystem(ToyStationsSystem);
+  world.registerSystem(SettingsAndHandsSystem);
   world.registerSystem(ResetSystem);
   buildRoom(world);
 });

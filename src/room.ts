@@ -1,16 +1,22 @@
 import {
+  AssetManager,
   BoxGeometry,
   CanvasTexture,
   Color,
   CylinderGeometry,
+  DirectionalLight,
   DistanceGrabbable,
   Entity,
   Grabbed,
+  Group,
+  HemisphereLight,
   InputComponent,
   LocomotionEnvironment,
+  Matrix4,
   Mesh,
   MeshStandardMaterial,
   MovementMode,
+  Object3D,
   OneHandGrabbable,
   PhysicsBody,
   PhysicsManipulation,
@@ -18,10 +24,12 @@ import {
   PhysicsShapeType,
   PhysicsState,
   PhysicsSystem,
+  PointLight,
   Pressed,
   Quaternion,
   RayInteractable,
   RepeatWrapping,
+  SRGBColorSpace,
   SphereGeometry,
   Vector3,
   World,
@@ -41,6 +49,8 @@ import {
   ResetButton,
   Resettable,
   ScorePip,
+  SettingsButton,
+  SettingsMenu,
   SkyCloud,
   ToyMallet,
   XylophoneBar,
@@ -225,6 +235,9 @@ export function buildRoom(world: World) {
 
   // 5 Interactive Toy Stations around the perimeter of the room
   buildFiveToyStations(world);
+
+  // 3-Lines Menu Button & Floating VR Settings Menu (Day/Night + Girl/Boy Hand Tracking Hands)
+  buildSettingsMenuAndLauncher(world, tableTop);
 }
 
 const RC_CAR_SIZE: [number, number, number] = [0.16, 0.085, 0.24];
@@ -1309,19 +1322,52 @@ function buildArchitecture(world: World) {
   });
 
   // Bright Daytime Sky Canopy high above the 2 ceiling windows
-  const skyCanopy = new Mesh(
-    new BoxGeometry(18, 0.08, 12),
-    new MeshStandardMaterial({
-      color: new Color(0x68b9ff),
-      emissive: new Color(0x4aa3f0),
-      emissiveIntensity: 0.75,
-      roughness: 1.0,
-    }),
-  );
+  const skyCanopyMat = new MeshStandardMaterial({
+    color: new Color(0x68b9ff),
+    emissive: new Color(0x4aa3f0),
+    emissiveIntensity: 0.75,
+    roughness: 1.0,
+  });
+  const skyCanopy = new Mesh(new BoxGeometry(18, 0.08, 12), skyCanopyMat);
   skyCanopy.position.set(0, 6.7, 0);
   skyCanopy.castShadow = false;
   skyCanopy.receiveShadow = false;
   archRoot.add(skyCanopy);
+
+  // Nighttime Moon & Starfield canopy just below the sky canopy (visible through skylights at night)
+  const nightSkyGroup = new Group();
+  nightSkyGroup.visible = false;
+  const moonMat = new MeshStandardMaterial({
+    color: new Color(0xfff8d6),
+    emissive: new Color(0xffeaa0),
+    emissiveIntensity: 1.4,
+    roughness: 0.3,
+  });
+  const moonMesh = new Mesh(new SphereGeometry(0.42, 24, 18), moonMat);
+  moonMesh.scale.set(1, 0.35, 1);
+  moonMesh.position.set(-0.65, 6.35, -1.18);
+  nightSkyGroup.add(moonMesh);
+
+  const starMat = new MeshStandardMaterial({
+    color: new Color(0xffffff),
+    emissive: new Color(0xdbeafe),
+    emissiveIntensity: 1.6,
+    roughness: 0.2,
+  });
+  const starGeo = new SphereGeometry(0.032, 8, 8);
+  for (let i = 0; i < 48; i++) {
+    const star = new Mesh(starGeo, starMat);
+    const sx = ((i * 73) % 100) * 0.08 - 4.0;
+    const sz = ((i * 41) % 100) * 0.056 - 2.8;
+    const sScale = 0.65 + (i % 4) * 0.28;
+    star.scale.setScalar(sScale);
+    star.position.set(sx, 6.48, sz);
+    nightSkyGroup.add(star);
+  }
+  const indoorNightLight = new PointLight(0xffb86c, 0, 9.5, 1.4);
+  indoorNightLight.position.set(0, 3.3, 0);
+  archRoot.add(indoorNightLight);
+  archRoot.add(nightSkyGroup);
 
   world.createTransformEntity(archRoot);
 
@@ -1341,6 +1387,12 @@ function buildArchitecture(world: World) {
     emissiveIntensity: 0.35,
     roughness: 0.85,
   });
+
+  sceneSkyRefs.skyCanopyMat = skyCanopyMat;
+  sceneSkyRefs.cloudMat = cloudMat;
+  sceneSkyRefs.glassMat = glassMat;
+  sceneSkyRefs.nightSkyGroup = nightSkyGroup;
+  sceneSkyRefs.indoorNightLight = indoorNightLight;
 
   const puffOffsets: Array<[number, number, number, number]> = [
     [0, 0.08, 0, 0.46],
@@ -2730,3 +2782,687 @@ export class DesktopFirstPersonSystem extends createSystem({
     this.camera.rotation.z = 0;
   }
 }
+
+// ---- VR Hand-Tracking Hands (Girl / Boy) & 3-Lines Settings Menu -----------
+const sceneSkyRefs: {
+  skyCanopyMat: MeshStandardMaterial | null;
+  cloudMat: MeshStandardMaterial | null;
+  glassMat: MeshStandardMaterial | null;
+  nightSkyGroup: Group | null;
+  indoorNightLight: PointLight | null;
+} = {
+  skyCanopyMat: null,
+  cloudMat: null,
+  glassMat: null,
+  nightSkyGroup: null,
+  indoorNightLight: null,
+};
+
+const SETTINGS_BUTTON_LAYOUT: Array<{
+  action: number;
+  offset: [number, number, number];
+  size: [number, number, number];
+  label: string;
+  sublabel: string;
+  accentColor: number;
+}> = [
+  {
+    action: 0,
+    offset: [0.325, 0.21, 0.02],
+    size: [0.068, 0.058, 0.018],
+    label: 'X',
+    sublabel: 'CLOSE',
+    accentColor: 0xe74c3c,
+  },
+  {
+    action: 1,
+    offset: [-0.175, 0.045, 0.022],
+    size: [0.31, 0.145, 0.022],
+    label: 'DAYTIME',
+    sublabel: 'Sunny Blue Sky',
+    accentColor: 0x38bdf8,
+  },
+  {
+    action: 2,
+    offset: [0.175, 0.045, 0.022],
+    size: [0.31, 0.145, 0.022],
+    label: 'NIGHTTIME',
+    sublabel: 'Moon & Starry Sky',
+    accentColor: 0x818cf8,
+  },
+  {
+    action: 3,
+    offset: [-0.175, -0.145, 0.022],
+    size: [0.31, 0.165, 0.022],
+    label: 'GIRL HANDS',
+    sublabel: 'Light / Slender Hands',
+    accentColor: 0xf472b6,
+  },
+  {
+    action: 4,
+    offset: [0.175, -0.145, 0.022],
+    size: [0.31, 0.165, 0.022],
+    label: 'BOY HANDS',
+    sublabel: 'Dark / Broad Hands',
+    accentColor: 0x22c55e,
+  },
+];
+
+function makeMenuCardTexture(
+  title: string,
+  subtitle: string,
+  accentHex: string,
+  active: boolean,
+): CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 256;
+  const ctx = canvas.getContext('2d')!;
+
+  ctx.fillStyle = active ? '#1e293b' : '#0f172a';
+  ctx.fillRect(0, 0, 512, 256);
+
+  ctx.strokeStyle = active ? accentHex : '#334155';
+  ctx.lineWidth = active ? 14 : 6;
+  ctx.strokeRect(10, 10, 492, 236);
+
+  if (active) {
+    ctx.fillStyle = accentHex;
+    ctx.fillRect(22, 22, 118, 36);
+    ctx.fillStyle = '#0f172a';
+    ctx.font = 'bold 22px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('ACTIVE', 81, 41);
+  }
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 46px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(title, 256, 118);
+
+  ctx.fillStyle = '#cbd5e1';
+  ctx.font = 'bold 26px sans-serif';
+  ctx.fillText(subtitle, 256, 178);
+
+  const tex = new CanvasTexture(canvas);
+  tex.needsUpdate = true;
+  return tex;
+}
+
+function makeHeaderTexture(): CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 1024;
+  canvas.height = 160;
+  const ctx = canvas.getContext('2d')!;
+
+  ctx.fillStyle = '#090d16';
+  ctx.fillRect(0, 0, 1024, 160);
+
+  // 3-lines icon on the left
+  ctx.fillStyle = '#38bdf8';
+  for (let i = 0; i < 3; i++) {
+    ctx.fillRect(44, 42 + i * 30, 56, 12);
+  }
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 48px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('VR SETTINGS MENU', 124, 64);
+
+  ctx.fillStyle = '#94a3b8';
+  ctx.font = 'bold 26px sans-serif';
+  ctx.fillText('3-Lines Button / [M] Key  •  Time of Day & VR Hand Tracking Hands', 124, 118);
+
+  const tex = new CanvasTexture(canvas);
+  tex.needsUpdate = true;
+  return tex;
+}
+
+/**
+ * Instantiates a cut-and-doubled Left or Right hand model ('girl' or 'boy')
+ * from the preloaded GLB + OculusRealisticHand textures.
+ */
+function createStyledHandMesh(
+  style: 'girl' | 'boy',
+  side: 'left' | 'right',
+): Group {
+  const holder = new Group();
+  const gltfKey =
+    style === 'girl'
+      ? side === 'left'
+        ? 'girlHandLeft'
+        : 'girlHandRight'
+      : side === 'left'
+        ? 'boyHandLeft'
+        : 'boyHandRight';
+  const albedoKey = style === 'girl' ? 'girlHandAlbedo' : 'boyHandAlbedo';
+  const normalKey = style === 'girl' ? 'girlHandNormal' : 'boyHandNormal';
+
+  const gltf = AssetManager.getGLTF(gltfKey);
+  const albedoTex = AssetManager.getTexture(albedoKey);
+  const normalTex = AssetManager.getTexture(normalKey);
+
+  if (albedoTex) {
+    albedoTex.colorSpace = SRGBColorSpace;
+  }
+
+  const handMat = new MeshStandardMaterial({
+    color: new Color(style === 'girl' ? 0xfff3ed : 0xf4dfd3),
+    map: albedoTex ?? null,
+    normalMap: normalTex ?? null,
+    roughness: style === 'girl' ? 0.54 : 0.65,
+    metalness: 0.03,
+  });
+
+  if (gltf?.scene) {
+    gltf.scene.traverse((child: Object3D) => {
+      if ((child as Mesh).isMesh) {
+        const m = child as Mesh;
+        m.material = handMat;
+        m.castShadow = true;
+        m.receiveShadow = true;
+        m.frustumCulled = false;
+        // Prevent the hand visual itself from intercepting the controller/hand pointer ray
+        m.raycast = () => {};
+      }
+    });
+    holder.add(gltf.scene);
+  }
+
+  // Subtle wrist accessory so Girl vs Boy hands are also recognizable from the wrist
+  if (style === 'girl') {
+    const bracelet = new Mesh(
+      new CylinderGeometry(0.032, 0.033, 0.011, 20),
+      new MeshStandardMaterial({
+        color: new Color(0xf472b6),
+        emissive: new Color(0x831843),
+        emissiveIntensity: 0.25,
+        roughness: 0.25,
+        metalness: 0.7,
+      }),
+    );
+    bracelet.rotation.x = Math.PI / 2;
+    bracelet.scale.set(1.12, 1, 0.82);
+    bracelet.position.set(0, -0.008, 0.052);
+    bracelet.raycast = () => {};
+    holder.add(bracelet);
+  } else {
+    const wristband = new Mesh(
+      new CylinderGeometry(0.037, 0.038, 0.018, 20),
+      new MeshStandardMaterial({
+        color: new Color(0x1e293b),
+        roughness: 0.4,
+        metalness: 0.5,
+      }),
+    );
+    wristband.rotation.x = Math.PI / 2;
+    wristband.scale.set(1.15, 1, 0.84);
+    wristband.position.set(0, -0.01, 0.055);
+    wristband.raycast = () => {};
+    holder.add(wristband);
+  }
+
+  return holder;
+}
+
+/**
+ * Builds the 3-Lines Menu launcher button on the front-left corner of the table
+ * plus the floating 3D VR Settings Menu panel and its interactive option buttons.
+ */
+function buildSettingsMenuAndLauncher(world: World, tableTop: number) {
+  // 1. Physical 3-Lines Menu Button (☰) on the front-left corner of the table
+  const menuBtnBase = new Mesh(
+    new CylinderGeometry(0.054, 0.058, 0.028, 32),
+    mat(0x1e293b, 0.35),
+  );
+  menuBtnBase.position.set(-TABLE.width / 2 + 0.09, tableTop + 0.014, TABLE.z + 0.18);
+
+  const barMat = new MeshStandardMaterial({
+    color: new Color(0x38bdf8),
+    emissive: new Color(0x0284c7),
+    emissiveIntensity: 0.55,
+    roughness: 0.25,
+  });
+  [-0.018, 0, 0.018].forEach((bz) => {
+    const bar = new Mesh(new BoxGeometry(0.052, 0.008, 0.009), barMat);
+    bar.position.set(0, 0.016, bz);
+    bar.raycast = () => {};
+    menuBtnBase.add(bar);
+  });
+
+  const launcherEntity = world.createTransformEntity(menuBtnBase);
+  launcherEntity.addComponent(RayInteractable);
+  launcherEntity.addComponent(SettingsButton, { action: 0 });
+
+  // 2. Floating 3D VR Settings Menu Panel (starts closed below floor; 3-lines button toggles it in front of player)
+  const panelW = 0.78;
+  const panelH = 0.52;
+  const panelD = 0.024;
+  const panelRoot = new Mesh(
+    new BoxGeometry(panelW, panelH, panelD),
+    new MeshStandardMaterial({
+      color: new Color(0x0b1120),
+      roughness: 0.35,
+      metalness: 0.25,
+    }),
+  );
+  panelRoot.position.set(0, -10, 0);
+
+  // Outer glowing cyan frame border
+  const borderMat = new MeshStandardMaterial({
+    color: new Color(0x38bdf8),
+    emissive: new Color(0x0284c7),
+    emissiveIntensity: 0.45,
+    roughness: 0.3,
+  });
+  const topBorder = new Mesh(new BoxGeometry(panelW + 0.016, 0.012, panelD + 0.006), borderMat);
+  topBorder.position.set(0, panelH / 2, 0);
+  topBorder.raycast = () => {};
+  panelRoot.add(topBorder);
+
+  const botBorder = new Mesh(new BoxGeometry(panelW + 0.016, 0.012, panelD + 0.006), borderMat);
+  botBorder.position.set(0, -panelH / 2, 0);
+  botBorder.raycast = () => {};
+  panelRoot.add(botBorder);
+
+  // Header sign bar at top of Settings Menu
+  const headerBanner = new Mesh(
+    new BoxGeometry(0.62, 0.088, 0.006),
+    new MeshStandardMaterial({
+      map: makeHeaderTexture(),
+      roughness: 0.35,
+    }),
+  );
+  headerBanner.position.set(-0.04, 0.205, panelD / 2 + 0.004);
+  headerBanner.raycast = () => {};
+  panelRoot.add(headerBanner);
+
+  const menuEntity = world.createTransformEntity(panelRoot);
+  menuEntity.addComponent(SettingsMenu, { open: false });
+
+  // 3. Interactive Option Buttons (Close, Daytime, Nighttime, Girl Hands, Boy Hands)
+  for (const cfg of SETTINGS_BUTTON_LAYOUT) {
+    const [bw, bh, bd] = cfg.size;
+    const isClose = cfg.action === 0;
+    const btnMesh = new Mesh(
+      new BoxGeometry(bw, bh, bd),
+      isClose
+        ? new MeshStandardMaterial({
+            color: new Color(0xdc2626),
+            emissive: new Color(0x7f1d1d),
+            emissiveIntensity: 0.4,
+            roughness: 0.3,
+          })
+        : new MeshStandardMaterial({
+            map: makeMenuCardTexture(
+              cfg.label,
+              cfg.sublabel,
+              '#' + cfg.accentColor.toString(16).padStart(6, '0'),
+              cfg.action === 1 || cfg.action === 3,
+            ),
+            roughness: 0.3,
+          }),
+    );
+    btnMesh.name = `settings-btn-${cfg.action}`;
+    btnMesh.position.set(0, -10, 0);
+
+    // Add 3D miniature preview icons onto the cards
+    if (cfg.action === 1) {
+      // Sun icon on Daytime button
+      const sun = new Mesh(
+        new SphereGeometry(0.022, 16, 12),
+        new MeshStandardMaterial({
+          color: new Color(0xfacc15),
+          emissive: new Color(0xf59e0b),
+          emissiveIntensity: 0.9,
+          roughness: 0.2,
+        }),
+      );
+      sun.position.set(-0.11, 0.036, bd / 2 + 0.012);
+      sun.raycast = () => {};
+      btnMesh.add(sun);
+    } else if (cfg.action === 2) {
+      // Moon icon on Nighttime button
+      const moon = new Mesh(
+        new SphereGeometry(0.02, 16, 12),
+        new MeshStandardMaterial({
+          color: new Color(0xfef08a),
+          emissive: new Color(0xeab308),
+          emissiveIntensity: 0.7,
+          roughness: 0.25,
+        }),
+      );
+      moon.position.set(-0.11, 0.036, bd / 2 + 0.012);
+      moon.raycast = () => {};
+      btnMesh.add(moon);
+    } else if (cfg.action === 3 || cfg.action === 4) {
+      // Miniature doubled Left + Right 3D hand preview right on the Girl Hands / Boy Hands button!
+      const style = cfg.action === 3 ? 'girl' : 'boy';
+      const miniLeft = createStyledHandMesh(style, 'left');
+      miniLeft.scale.setScalar(0.22);
+      miniLeft.position.set(-0.115, 0.028, bd / 2 + 0.018);
+      miniLeft.rotation.set(-Math.PI / 2, 0, 0);
+      btnMesh.add(miniLeft);
+
+      const miniRight = createStyledHandMesh(style, 'right');
+      miniRight.scale.setScalar(0.22);
+      miniRight.position.set(0.115, 0.028, bd / 2 + 0.018);
+      miniRight.rotation.set(-Math.PI / 2, 0, 0);
+      btnMesh.add(miniRight);
+    }
+
+    const be = world.createTransformEntity(btnMesh);
+    be.addComponent(RayInteractable);
+    be.addComponent(SettingsButton, { action: cfg.action });
+  }
+}
+
+/**
+ * Manages:
+ * 1. Custom cut-and-doubled Left & Right VR hands ('girl' vs 'boy' styles) attached
+ *    to the player's left and right hands in VR (supporting both WebXR Hand Tracking
+ *    and controllers).
+ * 2. Toggling the VR Settings Menu when pressing the 3-lines button on the left
+ *    controller (`InputComponent.Menu` / button 7, or X/Y fallback, or `M` key on
+ *    desktop, or clicking the physical 3-lines button on the table).
+ * 3. Switching between Daytime and Nighttime lighting/sky/clouds, and between
+ *    Girl Hand-Tracking Hands and Boy Hand-Tracking Hands.
+ */
+export class SettingsAndHandsSystem extends createSystem({
+  menus: { required: [SettingsMenu] },
+  buttons: { required: [SettingsButton] },
+  pressedButtons: { required: [SettingsButton, Pressed] },
+}) {
+  private isNight = false;
+  private handStyle: 'girl' | 'boy' = 'girl';
+  private wasMKeyDown = false;
+
+  private leftHandRig = new Group();
+  private rightHandRig = new Group();
+  private girlLeftHand: Group | null = null;
+  private girlRightHand: Group | null = null;
+  private boyLeftHand: Group | null = null;
+  private boyRightHand: Group | null = null;
+
+  private dirLight: DirectionalLight | null = null;
+  private hemiLight: HemisphereLight | null = null;
+
+  private headPos = new Vector3();
+  private headDir = new Vector3();
+  private menuPos = new Vector3(0, 1.42, -1.05);
+  private menuQuat = new Quaternion();
+  private btnOffset = new Vector3();
+  private jointMat = new Matrix4();
+  private jointScale = new Vector3();
+  private upAxis = new Vector3(0, 1, 0);
+
+  init() {
+    // Disable default white outline hands & controller meshes so our custom VR hands replace them cleanly
+    this.input.visualAdapters.hand.left.toggleVisual(false);
+    this.input.visualAdapters.hand.right.toggleVisual(false);
+    this.input.visualAdapters.controller.left.toggleVisual(false);
+    this.input.visualAdapters.controller.right.toggleVisual(false);
+
+    // Build Left & Right custom VR hand rigs (with both Girl and Boy doubled hand meshes ready to switch)
+    this.girlLeftHand = createStyledHandMesh('girl', 'left');
+    this.girlRightHand = createStyledHandMesh('girl', 'right');
+    this.boyLeftHand = createStyledHandMesh('boy', 'left');
+    this.boyRightHand = createStyledHandMesh('boy', 'right');
+
+    this.leftHandRig.add(this.girlLeftHand, this.boyLeftHand);
+    this.rightHandRig.add(this.girlRightHand, this.boyRightHand);
+
+    this.player.gripSpaces.left.add(this.leftHandRig);
+    this.player.gripSpaces.right.add(this.rightHandRig);
+
+    this.applyHandStyle('girl');
+
+    this.cleanupFuncs.push(
+      this.queries.pressedButtons.subscribe('qualify', (e) => {
+        const action = e.getValue(SettingsButton, 'action') ?? 0;
+        this.handleAction(action);
+      }),
+    );
+  }
+
+  private handleAction(action: number) {
+    if (action === 0) {
+      this.toggleMenu();
+      playSynthTone(520, 0.12, 'sine', 660);
+    } else if (action === 1) {
+      this.applyTimeOfDay(false);
+      this.refreshMenuButtonTextures();
+      playSynthTone(587.33, 0.18, 'triangle', 880);
+    } else if (action === 2) {
+      this.applyTimeOfDay(true);
+      this.refreshMenuButtonTextures();
+      playSynthTone(440, 0.22, 'sine', 329.63);
+    } else if (action === 3) {
+      this.applyHandStyle('girl');
+      this.refreshMenuButtonTextures();
+      playSynthTone(659.25, 0.16, 'triangle', 783.99);
+    } else if (action === 4) {
+      this.applyHandStyle('boy');
+      this.refreshMenuButtonTextures();
+      playSynthTone(392.0, 0.16, 'triangle', 523.25);
+    }
+  }
+
+  private applyHandStyle(style: 'girl' | 'boy') {
+    this.handStyle = style;
+    const isGirl = style === 'girl';
+    if (this.girlLeftHand) this.girlLeftHand.visible = isGirl;
+    if (this.girlRightHand) this.girlRightHand.visible = isGirl;
+    if (this.boyLeftHand) this.boyLeftHand.visible = !isGirl;
+    if (this.boyRightHand) this.boyRightHand.visible = !isGirl;
+  }
+
+  private findSceneLights() {
+    if (this.dirLight && this.hemiLight) return;
+    this.scene.traverse((obj: Object3D) => {
+      if ((obj as DirectionalLight).isDirectionalLight) {
+        this.dirLight = obj as DirectionalLight;
+      } else if ((obj as HemisphereLight).isHemisphereLight) {
+        this.hemiLight = obj as HemisphereLight;
+      }
+    });
+  }
+
+  private applyTimeOfDay(night: boolean) {
+    this.isNight = night;
+    this.findSceneLights();
+
+    if (this.dirLight) {
+      this.dirLight.color.setHex(night ? 0x7ea8ff : 0xfff1de);
+      this.dirLight.intensity = night ? 0.65 : 2.3;
+    }
+    if (this.hemiLight) {
+      this.hemiLight.color.setHex(night ? 0x22355c : 0xc7d4f5);
+      this.hemiLight.groundColor.setHex(night ? 0x453528 : 0x979ba6);
+      this.hemiLight.intensity = night ? 0.52 : 1.15;
+    }
+    if (sceneSkyRefs.skyCanopyMat) {
+      sceneSkyRefs.skyCanopyMat.color.setHex(night ? 0x050918 : 0x68b9ff);
+      sceneSkyRefs.skyCanopyMat.emissive.setHex(night ? 0x060d24 : 0x4aa3f0);
+      sceneSkyRefs.skyCanopyMat.emissiveIntensity = night ? 0.85 : 0.75;
+    }
+    if (sceneSkyRefs.cloudMat) {
+      sceneSkyRefs.cloudMat.color.setHex(night ? 0x33476b : 0xffffff);
+      sceneSkyRefs.cloudMat.emissive.setHex(night ? 0x16233b : 0xdceeff);
+      sceneSkyRefs.cloudMat.emissiveIntensity = night ? 0.28 : 0.35;
+    }
+    if (sceneSkyRefs.glassMat) {
+      sceneSkyRefs.glassMat.color.setHex(night ? 0x1b2e54 : 0x9ad4ff);
+      sceneSkyRefs.glassMat.opacity = night ? 0.26 : 0.18;
+    }
+    if (sceneSkyRefs.nightSkyGroup) {
+      sceneSkyRefs.nightSkyGroup.visible = night;
+    }
+    if (sceneSkyRefs.indoorNightLight) {
+      sceneSkyRefs.indoorNightLight.intensity = night ? 1.35 : 0;
+    }
+  }
+
+  private refreshMenuButtonTextures() {
+    for (const b of this.queries.buttons.entities) {
+      const action = b.getValue(SettingsButton, 'action') ?? 0;
+      if (action === 0) continue;
+      const cfg = SETTINGS_BUTTON_LAYOUT.find((c) => c.action === action);
+      if (!cfg) continue;
+      const mesh = b.object3D as Mesh | undefined;
+      if (!mesh) continue;
+
+      const isActive =
+        (action === 1 && !this.isNight) ||
+        (action === 2 && this.isNight) ||
+        (action === 3 && this.handStyle === 'girl') ||
+        (action === 4 && this.handStyle === 'boy');
+
+      const matStd = mesh.material as MeshStandardMaterial;
+      if (matStd.map) {
+        matStd.map.dispose();
+      }
+      matStd.map = makeMenuCardTexture(
+        cfg.label,
+        cfg.sublabel,
+        '#' + cfg.accentColor.toString(16).padStart(6, '0'),
+        isActive,
+      );
+      matStd.needsUpdate = true;
+    }
+  }
+
+  private toggleMenu() {
+    for (const m of this.queries.menus.entities) {
+      const nextOpen = !(m.getValue(SettingsMenu, 'open') ?? false);
+      m.setValue(SettingsMenu, 'open', nextOpen);
+
+      if (nextOpen) {
+        // Place the floating Settings Menu comfortably in front of the player's current view
+        this.camera.getWorldPosition(this.headPos);
+        this.camera.getWorldDirection(this.headDir);
+        this.headDir.y = 0;
+        if (this.headDir.lengthSq() < 0.001) {
+          this.headDir.set(0, 0, -1);
+        } else {
+          this.headDir.normalize();
+        }
+
+        this.menuPos
+          .copy(this.headPos)
+          .addScaledVector(this.headDir, 1.05);
+        this.menuPos.y = Math.max(1.15, Math.min(1.65, this.headPos.y - 0.05));
+
+        const yaw = Math.atan2(-this.headDir.x, -this.headDir.z);
+        this.menuQuat.setFromAxisAngle(this.upAxis, yaw);
+      }
+
+      this.syncMenuTransforms(m, nextOpen);
+    }
+  }
+
+  private syncMenuTransforms(menuEntity: Entity, isOpen: boolean) {
+    const menuObj = menuEntity.object3D;
+    if (!menuObj) return;
+
+    if (!isOpen) {
+      menuObj.position.set(0, -10, 0);
+      for (const b of this.queries.buttons.entities) {
+        const action = b.getValue(SettingsButton, 'action') ?? 0;
+        const bObj = b.object3D;
+        if (!bObj) continue;
+        // Keep the tabletop 3-lines launcher button (which has no 'settings-btn-' prefix) on the table
+        if (!bObj.name.startsWith('settings-btn-')) continue;
+        bObj.position.set(0, -10, 0);
+        if (action === 0) continue;
+      }
+      return;
+    }
+
+    menuObj.position.copy(this.menuPos);
+    menuObj.quaternion.copy(this.menuQuat);
+
+    for (const b of this.queries.buttons.entities) {
+      const bObj = b.object3D;
+      if (!bObj || !bObj.name.startsWith('settings-btn-')) continue;
+      const action = b.getValue(SettingsButton, 'action') ?? 0;
+      const cfg = SETTINGS_BUTTON_LAYOUT.find((c) => c.action === action);
+      if (!cfg) continue;
+
+      this.btnOffset
+        .set(cfg.offset[0], cfg.offset[1], cfg.offset[2])
+        .applyQuaternion(this.menuQuat);
+      bObj.position.copy(this.menuPos).add(this.btnOffset);
+      bObj.quaternion.copy(this.menuQuat);
+    }
+  }
+
+  update() {
+    // 1. Keep default XR visuals hidden so our custom Girl / Boy VR hands are the active hands
+    for (const side of ['left', 'right'] as const) {
+      const handAdapter = this.input.visualAdapters.hand[side];
+      const ctrlAdapter = this.input.visualAdapters.controller[side];
+      if (handAdapter.visual) handAdapter.visual.model.visible = false;
+      if (ctrlAdapter.visual) ctrlAdapter.visual.model.visible = false;
+
+      const rig = side === 'left' ? this.leftHandRig : this.rightHandRig;
+      const primary = this.input.getPrimaryInputSource(side);
+      const isHandTracking = Boolean(primary?.hand);
+
+      const handJoints = (
+        handAdapter as unknown as { jointTransforms?: Float32Array }
+      ).jointTransforms;
+
+      if (isHandTracking && handJoints && handJoints.length >= 176) {
+        // Joint 10 in WebXR Hand Input is 'middle-finger-metacarpal' (center of palm in gripSpace)
+        this.jointMat.fromArray(handJoints, 10 * 16);
+        if (this.jointMat.elements[15] !== 0) {
+          this.jointMat.decompose(
+            rig.position,
+            rig.quaternion,
+            this.jointScale,
+          );
+        }
+      } else {
+        // Controller gripSpace pose: center at grip origin with natural inward wrist roll
+        rig.position.set(0, 0, 0);
+        rig.rotation.set(0, 0, side === 'right' ? -0.52 : 0.52);
+      }
+
+      // Subtle hand flex when pinching or pulling trigger/grip
+      const gp = this.input.gamepads[side];
+      const squeezeVal = Math.max(
+        gp?.getButtonValue(InputComponent.Trigger) ?? 0,
+        gp?.getButtonValue(InputComponent.Squeeze) ?? 0,
+        handAdapter.getPinchStrength(),
+      );
+      const scaleZ = 1 - squeezeVal * 0.1;
+      const scaleY = 1 - squeezeVal * 0.06;
+      rig.scale.set(1, scaleY, scaleZ);
+    }
+
+    // 2. Check 3-Lines Menu Button on left Quest controller (InputComponent.Menu / button 7, or X/Y fallback)
+    const gpLeft = this.input.gamepads.left;
+    if (
+      gpLeft?.getButtonDown(InputComponent.Menu) ||
+      gpLeft?.getButtonDownByIdx(7) ||
+      gpLeft?.getButtonDown(InputComponent.Y_Button) ||
+      gpLeft?.getButtonDown(InputComponent.X_Button)
+    ) {
+      this.toggleMenu();
+      playSynthTone(520, 0.12, 'sine', 660);
+    }
+
+    // 3. Desktop keyboard shortcut 'M' to toggle the Settings Menu for easy browser testing
+    const isMDown = Boolean(this.input.keyboard?.getKeyPressed('KeyM'));
+    if (isMDown && !this.wasMKeyDown) {
+      this.toggleMenu();
+      playSynthTone(520, 0.12, 'sine', 660);
+    }
+    this.wasMKeyDown = isMDown;
+  }
+}
+

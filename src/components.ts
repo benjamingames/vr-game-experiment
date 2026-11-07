@@ -13,6 +13,8 @@ import {
   ResetButton,
   Resettable,
   ScorePip,
+  SettingsButton,
+  SettingsMenu,
   SkyCloud,
   ToyMallet,
   XylophoneBar,
@@ -35,4 +37,6 @@ export default defineComponents([
   Mole,
   ReflexBag,
   CarnivalStriker,
+  SettingsMenu,
+  SettingsButton,
 ]);

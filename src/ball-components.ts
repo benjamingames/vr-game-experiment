@@ -102,3 +102,15 @@ export const CarnivalStriker = createComponent('CarnivalStriker', {
   puckVel: { type: Types.Float32, default: 0 },
   bellFlash: { type: Types.Float32, default: 0 },
 });
+
+/** Floating VR Settings Menu panel toggled by the 3-lines menu button. */
+export const SettingsMenu = createComponent('SettingsMenu', {
+  open: { type: Types.Boolean, default: false },
+});
+
+/** Interactive button on the VR Settings Menu or 3-lines menu launcher button. */
+export const SettingsButton = createComponent('SettingsButton', {
+  // 0=ToggleMenu, 1=Daytime, 2=Nighttime, 3=GirlHands, 4=BoyHands
+  action: { type: Types.Int8, default: 0 },
+});
+
