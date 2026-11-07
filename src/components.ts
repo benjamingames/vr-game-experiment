@@ -1,6 +1,8 @@
 import { defineComponents } from '@iwsdk/core';
 import {
   Dart,
+  FacePart,
+  FaceResetButton,
   RCCar,
   RCControl,
   RCRemote,
@@ -15,4 +17,6 @@ export default defineComponents([
   RCCar,
   RCRemote,
   RCControl,
+  FacePart,
+  FaceResetButton,
 ]);

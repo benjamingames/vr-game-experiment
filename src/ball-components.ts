@@ -35,3 +35,15 @@ export const RCControl = createComponent('RCControl', {
   action: { type: Types.Int8, default: 0 }, // 1=Left, 2=Right, 3=Gas, 4=Brake, 5=Thr-, 6=Thr+, 11..15=ThrLevel 1..5
   localOffset: { type: Types.Vec3, default: [0, 0, 0] },
 });
+
+/** A grabbable, pullable part of the floating stretchy face that snaps back elastically on reset. */
+export const FacePart = createComponent('FacePart', {
+  partId: { type: Types.Int8, default: 0 },
+  snapping: { type: Types.Boolean, default: false },
+  baseRadius: { type: Types.Float32, default: 0.04 },
+  home: { type: Types.Vec3, default: [0, 0, 0] },
+  vel: { type: Types.Vec3, default: [0, 0, 0] },
+});
+
+/** Floating button next to the stretchy head that triggers an elastic wobble snap-back. */
+export const FaceResetButton = createComponent('FaceResetButton', {});

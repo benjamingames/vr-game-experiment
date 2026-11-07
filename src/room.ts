@@ -27,6 +27,8 @@ import {
 } from '@iwsdk/core';
 import {
   Dart,
+  FacePart,
+  FaceResetButton,
   RCCar,
   RCControl,
   RCRemote,
@@ -211,6 +213,9 @@ export function buildRoom(world: World) {
   const be = world.createTransformEntity(btn);
   be.addComponent(RayInteractable);
   be.addComponent(ResetButton);
+
+  // Floating Mario-style stretchy head behind the player (+Z) with its own elastic reset button
+  buildStretchyHead(world);
 }
 
 const RC_CAR_SIZE: [number, number, number] = [0.16, 0.085, 0.24];
@@ -945,6 +950,431 @@ export class ResetSystem extends createSystem({
     for (const e of this.queries.items.entities) {
       const y = e.object3D?.position.y ?? 0;
       if (y < -1 || y > ROOM.height + 1) this.resetOne(e);
+    }
+  }
+}
+
+// ---- Floating Mario-style Stretchy Head (behind the player at +Z) ----------
+const HEAD_POS = { x: 0, y: 1.52, z: 1.65 };
+const FACE_BTN_POS: [number, number, number] = [-0.52, 1.48, 1.52];
+const SKIN_COLOR = 0xffcca3;
+const SKIN_ROSY = 0xffb38a;
+const HAIR_BROWN = 0x3d1e0d;
+const MARIO_RED = 0xe62314;
+
+/**
+ * Builds a floating Mario-like head behind the player (+Z, facing -Z) with 10
+ * grabbable/pullable stretchy parts:
+ * 0=Nose, 1=Left Cheek, 2=Right Cheek, 3=Mustache, 4=Hat,
+ * 5=Left Ear, 6=Right Ear, 7=Left Eyelid, 8=Right Eyelid, 9=Chin
+ * plus a floating elastic-snap reset button beside the head.
+ */
+function buildStretchyHead(world: World) {
+  const { x: hx, y: hy, z: hz } = HEAD_POS;
+
+  // Static cranium base
+  const headBase = new Mesh(
+    new SphereGeometry(0.22, 32, 24),
+    mat(SKIN_COLOR, 0.55),
+  );
+  headBase.position.set(hx, hy, hz);
+  headBase.castShadow = true;
+
+  // Back hair & sideburns (dark brown)
+  const backHair = new Mesh(
+    new SphereGeometry(0.226, 24, 18),
+    mat(HAIR_BROWN, 0.7),
+  );
+  backHair.position.set(0, -0.01, 0.035);
+  headBase.add(backHair);
+
+  [-1, 1].forEach((side) => {
+    const sideburn = new Mesh(
+      new BoxGeometry(0.035, 0.1, 0.065),
+      mat(HAIR_BROWN, 0.7),
+    );
+    sideburn.position.set(side * 0.2, 0.0, -0.05);
+    headBase.add(sideburn);
+
+    // Eyes (sclera + blue iris + pupil + highlight) facing -Z
+    const sclera = new Mesh(
+      new SphereGeometry(0.042, 20, 16),
+      mat(0xffffff, 0.25),
+    );
+    sclera.scale.set(0.95, 1.15, 0.65);
+    sclera.position.set(side * 0.075, 0.04, -0.195);
+    headBase.add(sclera);
+
+    const iris = new Mesh(
+      new SphereGeometry(0.025, 16, 12),
+      mat(0x1b75ff, 0.2),
+    );
+    iris.scale.set(0.95, 1.1, 0.55);
+    iris.position.set(side * 0.075, 0.04, -0.214);
+    headBase.add(iris);
+
+    const pupil = new Mesh(
+      new SphereGeometry(0.014, 14, 10),
+      mat(0x111111, 0.15),
+    );
+    pupil.scale.set(1, 1.1, 0.5);
+    pupil.position.set(side * 0.075, 0.04, -0.222);
+    headBase.add(pupil);
+  });
+
+  // Smiling mouth under the mustache
+  const mouth = new Mesh(
+    new SphereGeometry(0.048, 16, 12),
+    mat(0x8a2be2, 0.6),
+  );
+  mouth.material = mat(0x7a1c1c, 0.6);
+  mouth.scale.set(1.3, 0.45, 0.5);
+  mouth.position.set(0, -0.125, -0.195);
+  headBase.add(mouth);
+
+  world.createTransformEntity(headBase);
+
+  // Floating Reset Button next to the head (also holds the 10 stretch-bridge meshes)
+  const btnHousing = new Mesh(
+    new CylinderGeometry(0.075, 0.075, 0.03, 32),
+    mat(0xf2c94c, 0.35),
+  );
+  btnHousing.geometry.rotateX(Math.PI / 2);
+  btnHousing.position.set(...FACE_BTN_POS);
+
+  const btnCapGeo = new CylinderGeometry(0.056, 0.056, 0.028, 32);
+  btnCapGeo.rotateX(Math.PI / 2);
+  const btnCap = new Mesh(btnCapGeo, mat(0x2ecc71, 0.3));
+  btnCap.name = 'face-reset-cap';
+  btnCap.position.set(0, 0, -0.018);
+  btnHousing.add(btnCap);
+
+  // Helper to spawn a grabbable, pullable FacePart + its companion elastic bridge
+  const addFacePart = (
+    partId: number,
+    mesh: Mesh,
+    home: [number, number, number],
+    bridgeColor: number,
+    baseRadius: number,
+  ) => {
+    mesh.position.set(...home);
+    mesh.castShadow = true;
+    const e = world.createTransformEntity(mesh);
+    e.addComponent(OneHandGrabbable);
+    e.addComponent(RayInteractable);
+    e.addComponent(DistanceGrabbable, {
+      movementMode: MovementMode.MoveFromTarget,
+    });
+    e.addComponent(FacePart, {
+      partId,
+      snapping: false,
+      baseRadius,
+    });
+    e.getVectorView(FacePart, 'home').set(home);
+
+    const bridge = new Mesh(
+      new CylinderGeometry(1, 1, 1, 16),
+      mat(bridgeColor, 0.55),
+    );
+    bridge.name = `stretch-bridge-${partId}`;
+    bridge.visible = false;
+    bridge.raycast = () => {};
+    btnHousing.add(bridge);
+  };
+
+  // 0. Nose (big round Mario nose in front)
+  const noseGeo = new SphereGeometry(0.068, 24, 18);
+  noseGeo.scale(1.05, 0.92, 1.18);
+  const nose = new Mesh(noseGeo, mat(SKIN_ROSY, 0.45));
+  addFacePart(0, nose, [hx, hy - 0.015, hz - 0.255], SKIN_ROSY, 0.046);
+
+  // 1 & 2. Left Cheek & Right Cheek
+  [-1, 1].forEach((side, idx) => {
+    const cheekGeo = new SphereGeometry(0.062, 20, 16);
+    cheekGeo.scale(1.05, 0.95, 0.95);
+    const cheek = new Mesh(cheekGeo, mat(SKIN_ROSY, 0.5));
+    addFacePart(
+      1 + idx,
+      cheek,
+      [hx + side * 0.135, hy - 0.065, hz - 0.175],
+      SKIN_ROSY,
+      0.042,
+    );
+  });
+
+  // 3. Mustache (bushy multi-lobed dark brown Mario mustache under the nose)
+  const stacheCenterGeo = new SphereGeometry(0.046, 18, 14);
+  stacheCenterGeo.scale(1.4, 0.65, 0.85);
+  const mustache = new Mesh(stacheCenterGeo, mat(HAIR_BROWN, 0.65));
+  const lobeOffsets: Array<[number, number, number, number]> = [
+    [-0.055, -0.004, 0.008, 0.044],
+    [0.055, -0.004, 0.008, 0.044],
+    [-0.105, 0.008, 0.024, 0.038],
+    [0.105, 0.008, 0.024, 0.038],
+  ];
+  lobeOffsets.forEach(([lx, ly, lz, lr]) => {
+    const lobeGeo = new SphereGeometry(lr, 16, 12);
+    lobeGeo.scale(1.2, 0.72, 0.8);
+    const lobe = new Mesh(lobeGeo, mat(HAIR_BROWN, 0.65));
+    lobe.position.set(lx, ly, lz);
+    mustache.add(lobe);
+  });
+  addFacePart(3, mustache, [hx, hy - 0.088, hz - 0.225], HAIR_BROWN, 0.042);
+
+  // 4. Hat (iconic red Mario cap with visor and white 'M' emblem)
+  const hatCrownGeo = new SphereGeometry(0.235, 28, 18);
+  hatCrownGeo.scale(1.04, 0.58, 1.1);
+  const hat = new Mesh(hatCrownGeo, mat(MARIO_RED, 0.5));
+
+  const brimGeo = new CylinderGeometry(0.185, 0.185, 0.022, 24);
+  brimGeo.scale(1.1, 1, 0.85);
+  const brim = new Mesh(brimGeo, mat(MARIO_RED, 0.45));
+  brim.position.set(0, -0.055, -0.145);
+  brim.rotation.x = 0.12;
+  hat.add(brim);
+
+  const badgeGeo = new CylinderGeometry(0.055, 0.055, 0.012, 24);
+  badgeGeo.rotateX(Math.PI / 2);
+  const badge = new Mesh(badgeGeo, mat(0xffffff, 0.3));
+  badge.position.set(0, 0.015, -0.242);
+  hat.add(badge);
+
+  // Red 'M' bars on the white hat badge
+  const mMat = mat(MARIO_RED, 0.3);
+  [-0.022, 0.022].forEach((mx) => {
+    const leg = new Mesh(new BoxGeometry(0.01, 0.042, 0.006), mMat);
+    leg.position.set(mx, 0, -0.006);
+    badge.add(leg);
+  });
+  [-1, 1].forEach((side) => {
+    const diag = new Mesh(new BoxGeometry(0.009, 0.028, 0.006), mMat);
+    diag.position.set(side * 0.009, 0.004, -0.006);
+    diag.rotation.z = side * 0.45;
+    badge.add(diag);
+  });
+  addFacePart(4, hat, [hx, hy + 0.165, hz - 0.01], MARIO_RED, 0.085);
+
+  // 5 & 6. Left Ear & Right Ear
+  [-1, 1].forEach((side, idx) => {
+    const earGeo = new SphereGeometry(0.06, 20, 16);
+    earGeo.scale(0.5, 1.15, 0.9);
+    const ear = new Mesh(earGeo, mat(SKIN_COLOR, 0.5));
+    const innerEar = new Mesh(
+      new SphereGeometry(0.034, 14, 10),
+      mat(SKIN_ROSY, 0.6),
+    );
+    innerEar.scale.set(0.45, 1.0, 0.8);
+    innerEar.position.set(side * 0.012, 0, -0.008);
+    ear.add(innerEar);
+    addFacePart(
+      5 + idx,
+      ear,
+      [hx + side * 0.23, hy - 0.005, hz - 0.01],
+      SKIN_COLOR,
+      0.036,
+    );
+  });
+
+  // 7 & 8. Left Eyelid & Right Eyelid (with arched eyebrows on top)
+  [-1, 1].forEach((side, idx) => {
+    const lidGeo = new SphereGeometry(0.048, 18, 12);
+    lidGeo.scale(1.12, 0.52, 0.85);
+    const eyelid = new Mesh(lidGeo, mat(SKIN_ROSY, 0.5));
+
+    const brow = new Mesh(
+      new BoxGeometry(0.082, 0.022, 0.032),
+      mat(HAIR_BROWN, 0.65),
+    );
+    brow.position.set(0, 0.026, -0.012);
+    brow.rotation.z = side * -0.12;
+    eyelid.add(brow);
+
+    addFacePart(
+      7 + idx,
+      eyelid,
+      [hx + side * 0.075, hy + 0.078, hz - 0.195],
+      SKIN_ROSY,
+      0.028,
+    );
+  });
+
+  // 9. Chin (rounded bottom jaw/chin)
+  const chinGeo = new SphereGeometry(0.064, 20, 16);
+  chinGeo.scale(1.25, 0.82, 1.02);
+  const chin = new Mesh(chinGeo, mat(SKIN_COLOR, 0.5));
+  addFacePart(9, chin, [hx, hy - 0.185, hz - 0.155], SKIN_COLOR, 0.044);
+
+  const btnEntity = world.createTransformEntity(btnHousing);
+  btnEntity.addComponent(RayInteractable);
+  btnEntity.addComponent(FaceResetButton);
+}
+
+/**
+ * Handles stretching & holding Mario's face parts when pulled, and snaps them
+ * back like an underdamped elastic band (wobbling back and forth) when the
+ * floating reset button is pressed.
+ */
+export class StretchyFaceSystem extends createSystem({
+  parts: { required: [FacePart] },
+  resetBtns: { required: [FaceResetButton] },
+  pressedReset: { required: [FaceResetButton, Pressed] },
+}) {
+  private disp = new Vector3();
+  private dir = new Vector3();
+  private upAxis = new Vector3(0, 1, 0);
+  private forward = new Vector3(0, 0, -1);
+  private bridgeRot = new Quaternion();
+  private partRot = new Quaternion();
+  private identityRot = new Quaternion();
+
+  init() {
+    this.cleanupFuncs.push(
+      this.queries.pressedReset.subscribe('qualify', () => this.snapAllBack()),
+    );
+  }
+
+  snapAllBack() {
+    for (const e of this.queries.parts.entities) {
+      if (e.hasComponent(Grabbed)) continue;
+      const obj = e.object3D;
+      const h = e.getVectorView(FacePart, 'home');
+      const v = e.getVectorView(FacePart, 'vel');
+      if (obj) {
+        const dx = obj.position.x - h[0];
+        const dy = obj.position.y - h[1];
+        const dz = obj.position.z - h[2];
+        const dist = Math.hypot(dx, dy, dz);
+        // Even if a part wasn't pulled far, give it a fun little elastic boing
+        if (dist < 0.02) {
+          v.set([0, 0, -0.9]);
+        } else {
+          v.set([0, 0, 0]);
+        }
+      }
+      e.setValue(FacePart, 'snapping', true);
+    }
+  }
+
+  update(delta: number) {
+    const dt = Math.min(Math.max(delta, 0.004), 0.033);
+    const stiffness = 145; // high spring stiffness for fast elastic snap
+    const damping = 4.0; // low damping so parts overshoot and wobble back & forth
+
+    let btnRoot: Mesh | undefined;
+    for (const b of this.queries.resetBtns.entities) {
+      btnRoot = b.object3D as Mesh | undefined;
+      const cap = btnRoot?.getObjectByName('face-reset-cap');
+      if (cap) {
+        cap.position.z = b.hasComponent(Pressed) ? -0.008 : -0.018;
+      }
+    }
+
+    for (const e of this.queries.parts.entities) {
+      const obj = e.object3D;
+      if (!obj) continue;
+
+      const partId = e.getValue(FacePart, 'partId') ?? 0;
+      const baseRadius = e.getValue(FacePart, 'baseRadius') ?? 0.04;
+      const h = e.getVectorView(FacePart, 'home');
+      const v = e.getVectorView(FacePart, 'vel');
+      const isGrabbed = e.hasComponent(Grabbed);
+
+      if (isGrabbed) {
+        // While grabbed, cancel any active snap-back and clamp max pull distance
+        if (e.getValue(FacePart, 'snapping')) {
+          e.setValue(FacePart, 'snapping', false);
+        }
+        v.set([0, 0, 0]);
+        this.disp.set(
+          obj.position.x - h[0],
+          obj.position.y - h[1],
+          obj.position.z - h[2],
+        );
+        const maxPull = 0.85;
+        if (this.disp.length() > maxPull) {
+          this.disp.setLength(maxPull);
+          obj.position.set(
+            h[0] + this.disp.x,
+            h[1] + this.disp.y,
+            h[2] + this.disp.z,
+          );
+        }
+      } else if (e.getValue(FacePart, 'snapping')) {
+        // Underdamped Hooke's law spring: accelerates toward home, overshoots, and wobbles
+        const dx = obj.position.x - h[0];
+        const dy = obj.position.y - h[1];
+        const dz = obj.position.z - h[2];
+
+        const ax = -stiffness * dx - damping * v[0];
+        const ay = -stiffness * dy - damping * v[1];
+        const az = -stiffness * dz - damping * v[2];
+
+        v[0] += ax * dt;
+        v[1] += ay * dt;
+        v[2] += az * dt;
+
+        obj.position.x += v[0] * dt;
+        obj.position.y += v[1] * dt;
+        obj.position.z += v[2] * dt;
+
+        const remDistSq =
+          (obj.position.x - h[0]) ** 2 +
+          (obj.position.y - h[1]) ** 2 +
+          (obj.position.z - h[2]) ** 2;
+        const velSq = v[0] * v[0] + v[1] * v[1] + v[2] * v[2];
+        if (remDistSq < 0.000002 && velSq < 0.0002) {
+          obj.position.set(h[0], h[1], h[2]);
+          v.set([0, 0, 0]);
+          e.setValue(FacePart, 'snapping', false);
+        }
+      }
+      // Note: when neither grabbed nor snapping, obj.position holds its pulled position!
+
+      // Update rubbery part deformation and elastic connecting bridge
+      this.disp.set(
+        obj.position.x - h[0],
+        obj.position.y - h[1],
+        obj.position.z - h[2],
+      );
+      const dist = this.disp.length();
+      const bridge = btnRoot?.getObjectByName(`stretch-bridge-${partId}`);
+
+      if (dist > 0.003) {
+        this.dir.copy(this.disp).divideScalar(dist);
+
+        // Stretch the pulled part slightly along the pull direction and squash perpendicular
+        const stretch = 1 + Math.min(dist * 1.15, 0.75);
+        const squash = 1 / Math.sqrt(stretch);
+        obj.scale.set(squash, squash, stretch);
+
+        this.partRot.setFromUnitVectors(this.forward, this.dir);
+        obj.quaternion.copy(this.identityRot).slerp(
+          this.partRot,
+          Math.min(dist * 1.8, 0.45),
+        );
+
+        if (bridge) {
+          bridge.visible = true;
+          const midX = (h[0] + obj.position.x) * 0.5;
+          const midY = (h[1] + obj.position.y) * 0.5;
+          const midZ = (h[2] + obj.position.z) * 0.5;
+          bridge.position.set(
+            midX - FACE_BTN_POS[0],
+            midY - FACE_BTN_POS[1],
+            midZ - FACE_BTN_POS[2],
+          );
+          this.bridgeRot.setFromUnitVectors(this.upAxis, this.dir);
+          bridge.quaternion.copy(this.bridgeRot);
+          const taper = baseRadius / Math.sqrt(1 + dist * 2.2);
+          bridge.scale.set(taper, dist, taper);
+        }
+      } else {
+        obj.scale.set(1, 1, 1);
+        obj.quaternion.identity();
+        if (bridge) {
+          bridge.visible = false;
+        }
+      }
     }
   }
 }
