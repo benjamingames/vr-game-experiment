@@ -12,6 +12,11 @@ export const ResetButton = createComponent('ResetButton', {});
 export const Dart = createComponent('Dart', {
   stuck: { type: Types.Boolean, default: false },
   armed: { type: Types.Boolean, default: true },
+  wasGrabbed: { type: Types.Boolean, default: false },
+  launchFrames: { type: Types.Int8, default: 0 },
+  prevPos: { type: Types.Vec3, default: [0, 0, 0] },
+  handVel: { type: Types.Vec3, default: [0, 0, 0] },
+  launchVel: { type: Types.Vec3, default: [0, 0, 0] },
   stuckPos: { type: Types.Vec3, default: [0, 0, 0] },
   stuckQuat: { type: Types.Vec4, default: [0, 0, 0, 1] },
 });

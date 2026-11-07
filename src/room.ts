@@ -11,6 +11,7 @@ import {
   MovementMode,
   OneHandGrabbable,
   PhysicsBody,
+  PhysicsManipulation,
   PhysicsShape,
   PhysicsShapeType,
   PhysicsState,
@@ -33,11 +34,12 @@ const BALL_COLORS = [0xff4d4d, 0x4da6ff, 0xffd24d];
 const DART_COLORS = [0xff3b30, 0x34c759, 0x007aff, 0xaf52de];
 const DART_LENGTH = 0.18;
 const DART_WIDTH = 0.036;
+const DART_FLIGHT_GRAVITY = 0.15; // low gravity while flying so darts stay flat and easy to throw
 const DARTBOARD = {
   x: 0,
   y: 1.65,
   z: -ROOM.depth / 2 + 0.02,
-  radius: 0.38,
+  radius: 0.42,
   thickness: 0.04,
 };
 const TABLE = { width: 1.2, height: 0.8, depth: 0.6, z: -0.7 };
@@ -275,7 +277,7 @@ function buildDartboard(world: World) {
   world.createTransformEntity(board);
 }
 
-/** Sticks thrown darts into the wall dartboard; lets misses bounce/fall off everything else. */
+/** Assists dart throws toward the board, sticks hits into the target, and lets misses fall off. */
 export class DartSystem extends createSystem({
   darts: { required: [Dart, PhysicsBody] },
 }) {
@@ -284,10 +286,11 @@ export class DartSystem extends createSystem({
   private forward = new Vector3(0, 0, -1);
   private stickDir = new Vector3();
 
-  update() {
+  update(delta: number) {
     const physics = this.world.getSystem(PhysicsSystem);
     const boardFrontZ = DARTBOARD.z + DARTBOARD.thickness / 2 + 0.009;
     const captureZ = boardFrontZ + DART_LENGTH * 0.55;
+    const dt = Math.max(delta, 0.005);
 
     for (const e of this.queries.darts.entities) {
       const obj = e.object3D;
@@ -304,7 +307,107 @@ export class DartSystem extends createSystem({
         if (obj.position.z > captureZ + 0.08) {
           e.setValue(Dart, 'armed', true);
         }
+
+        const prev = e.getVectorView(Dart, 'prevPos');
+        const hv = e.getVectorView(Dart, 'handVel');
+        if (!e.getValue(Dart, 'wasGrabbed')) {
+          e.setValue(Dart, 'wasGrabbed', true);
+          e.setValue(Dart, 'launchFrames', 0);
+          prev.set([obj.position.x, obj.position.y, obj.position.z]);
+          hv.set([0, 0, 0]);
+        } else {
+          const ivx = (obj.position.x - prev[0]) / dt;
+          const ivy = (obj.position.y - prev[1]) / dt;
+          const ivz = (obj.position.z - prev[2]) / dt;
+          prev.set([obj.position.x, obj.position.y, obj.position.z]);
+
+          const instSpeed = Math.hypot(ivx, ivy, ivz);
+          const prevSpeed = Math.hypot(hv[0], hv[1], hv[2]);
+          const alpha = instSpeed >= prevSpeed * 0.7 ? 0.6 : 0.18;
+          hv[0] = hv[0] * (1 - alpha) + ivx * alpha;
+          hv[1] = hv[1] * (1 - alpha) + ivy * alpha;
+          hv[2] = hv[2] * (1 - alpha) + ivz * alpha;
+        }
         continue;
+      }
+
+      // Just released from grab: check if thrown toward the dartboard and apply throw assist
+      if (e.getValue(Dart, 'wasGrabbed')) {
+        e.setValue(Dart, 'wasGrabbed', false);
+        const hv = e.getVectorView(Dart, 'handVel');
+        const pv = e.getVectorView(PhysicsBody, '_linearVelocity');
+        const hSpeed = Math.hypot(hv[0], hv[1], hv[2]);
+        const pSpeed = Math.hypot(pv[0], pv[1], pv[2]);
+        const vx = hSpeed >= pSpeed ? hv[0] : pv[0];
+        const vy = hSpeed >= pSpeed ? hv[1] : pv[1];
+        const vz = hSpeed >= pSpeed ? hv[2] : pv[2];
+        const rawSpeed = Math.max(hSpeed, pSpeed);
+
+        // Assist any forward flick/throw aimed generally toward the front wall
+        if (rawSpeed > 0.22 && vz < 0.08 && obj.position.z > DARTBOARD.z + 0.35) {
+          const dxBoard = DARTBOARD.x - obj.position.x;
+          const dyBoard = DARTBOARD.y - obj.position.y;
+          const dzBoard = DARTBOARD.z - obj.position.z;
+          const distToBoard = Math.hypot(dxBoard, dyBoard, dzBoard);
+
+          const fwdSpeed = Math.max(-vz, rawSpeed * 0.5, 0.6);
+          const tRaw = Math.abs(dzBoard) / fwdSpeed;
+          const rawWallX = obj.position.x + vx * tRaw;
+          const rawWallY = obj.position.y + vy * tRaw;
+          const offX = rawWallX - DARTBOARD.x;
+          const offY = rawWallY - DARTBOARD.y;
+          const offDist = Math.hypot(offX, offY);
+
+          // If thrown within a generous 2.2m cone of the board, pull aim toward the bullseye
+          if (offDist < 2.2) {
+            let targetOffsetX = offX * 0.2;
+            let targetOffsetY = offY * 0.18;
+            const targetOffsetDist = Math.hypot(targetOffsetX, targetOffsetY);
+            const maxAssistRadius = DARTBOARD.radius * 0.82;
+            if (targetOffsetDist > maxAssistRadius) {
+              const scale = maxAssistRadius / targetOffsetDist;
+              targetOffsetX *= scale;
+              targetOffsetY *= scale;
+            }
+
+            const targetX = DARTBOARD.x + targetOffsetX;
+            const targetY = DARTBOARD.y + targetOffsetY;
+            const assistSpeed = Math.min(Math.max(rawSpeed * 2.5, 7.5), 11.0);
+            const flightTime = distToBoard / assistSpeed;
+
+            const lvx = (targetX - obj.position.x) / flightTime;
+            const lvy =
+              (targetY - obj.position.y) / flightTime +
+              0.5 * 9.81 * DART_FLIGHT_GRAVITY * flightTime;
+            const lvz = (DARTBOARD.z - obj.position.z) / flightTime;
+
+            e.getVectorView(Dart, 'launchVel').set([lvx, lvy, lvz]);
+            e.setValue(Dart, 'launchFrames', 3);
+            e.setValue(Dart, 'armed', true);
+            e.setValue(PhysicsBody, 'gravityFactor', DART_FLIGHT_GRAVITY);
+          }
+        }
+      }
+
+      // Apply assisted launch velocity and point-first alignment for the first frames of flight
+      const launchFrames = e.getValue(Dart, 'launchFrames') ?? 0;
+      if (launchFrames > 0) {
+        e.setValue(Dart, 'launchFrames', launchFrames - 1);
+        const lv = e.getVectorView(Dart, 'launchVel');
+        if (launchFrames === 3) {
+          this.stickDir.set(lv[0], lv[1], lv[2]).normalize();
+          this.rot.setFromUnitVectors(this.forward, this.stickDir);
+          physics?.setBodyTransform(e, {
+            position: obj.position,
+            quaternion: this.rot,
+          });
+        }
+        if (!e.hasComponent(PhysicsManipulation)) {
+          e.addComponent(PhysicsManipulation, {
+            linearVelocity: [lv[0], lv[1], lv[2]],
+            angularVelocity: [0, 0, 0],
+          });
+        }
       }
 
       if (isStuck) {
@@ -342,7 +445,7 @@ export class DartSystem extends createSystem({
         if (radialDist <= DARTBOARD.radius) {
           // Hit the dartboard! Embed tip-first into the board surface
           const vel = e.getVectorView(PhysicsBody, '_linearVelocity');
-          this.stickDir.set(vel[0] * 0.12, vel[1] * 0.12, -1).normalize();
+          this.stickDir.set(vel[0] * 0.08, vel[1] * 0.08, -1).normalize();
           this.rot.setFromUnitVectors(this.forward, this.stickDir);
 
           const halfLen = DART_LENGTH / 2;
@@ -362,6 +465,7 @@ export class DartSystem extends createSystem({
           ]);
           e.setValue(Dart, 'stuck', true);
           e.setValue(Dart, 'armed', false);
+          e.setValue(Dart, 'launchFrames', 0);
           e.setValue(PhysicsBody, 'gravityFactor', 0);
           e.setValue(PhysicsBody, 'linearDamping', 100);
           e.setValue(PhysicsBody, 'angularDamping', 100);
@@ -371,8 +475,10 @@ export class DartSystem extends createSystem({
             quaternion: this.rot,
           });
         } else {
-          // Hit the bare wall outside the dartboard: disarm so it falls to the floor
+          // Hit the bare wall outside the dartboard: disarm and restore normal gravity so it falls
           e.setValue(Dart, 'armed', false);
+          e.setValue(Dart, 'launchFrames', 0);
+          e.setValue(PhysicsBody, 'gravityFactor', 1);
         }
       }
     }
@@ -382,6 +488,8 @@ export class DartSystem extends createSystem({
 function unstickDart(e: Entity, armed: boolean) {
   e.setValue(Dart, 'stuck', false);
   e.setValue(Dart, 'armed', armed);
+  e.setValue(Dart, 'wasGrabbed', false);
+  e.setValue(Dart, 'launchFrames', 0);
   e.setValue(PhysicsBody, 'gravityFactor', 1);
   e.setValue(PhysicsBody, 'linearDamping', 0.05);
   e.setValue(PhysicsBody, 'angularDamping', 0.85);
