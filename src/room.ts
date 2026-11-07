@@ -4,6 +4,7 @@ import {
   CylinderGeometry,
   DistanceGrabbable,
   Entity,
+  Grabbed,
   InputComponent,
   Mesh,
   MeshStandardMaterial,
@@ -22,13 +23,23 @@ import {
   World,
   createSystem,
 } from '@iwsdk/core';
-import { ResetButton, Resettable } from './ball-components.js';
+import { Dart, ResetButton, Resettable } from './ball-components.js';
 
 // ---- Tweak these to play around -------------------------------------------
 const ROOM = { width: 6, depth: 6, height: 3 }; // meters; player starts at the center
 const BALL_RADIUS = 0.07;
 const BALL_BOUNCE = 0.6; // 0 = dead, 1 = superball
 const BALL_COLORS = [0xff4d4d, 0x4da6ff, 0xffd24d];
+const DART_COLORS = [0xff3b30, 0x34c759, 0x007aff, 0xaf52de];
+const DART_LENGTH = 0.18;
+const DART_WIDTH = 0.036;
+const DARTBOARD = {
+  x: 0,
+  y: 1.65,
+  z: -ROOM.depth / 2 + 0.02,
+  radius: 0.38,
+  thickness: 0.04,
+};
 const TABLE = { width: 1.2, height: 0.8, depth: 0.6, z: -0.7 };
 // ----------------------------------------------------------------------------
 
@@ -80,14 +91,14 @@ export function buildRoom(world: World) {
   );
   const tableTop = TABLE.height;
 
-  // Balls on the table: squeeze (grip) to grab up close, or point + trigger from afar
+  // Balls on the left side of the table: squeeze (grip) to grab up close, or point + trigger from afar
   BALL_COLORS.forEach((color, i) => {
     const ball = new Mesh(
       new SphereGeometry(BALL_RADIUS, 32, 16),
       mat(color, 0.35),
     );
     const home: [number, number, number] = [
-      (i - 1) * 0.3,
+      -0.44 + i * 0.22,
       tableTop + BALL_RADIUS + 0.01,
       TABLE.z,
     ];
@@ -113,6 +124,41 @@ export function buildRoom(world: World) {
     e.addComponent(Resettable);
     e.getVectorView(Resettable, 'home').set(home);
   });
+
+  // Darts on the right side of the table, pointing toward the wall dartboard (-Z)
+  DART_COLORS.forEach((color, i) => {
+    const dartMesh = createDartMesh(color);
+    const home: [number, number, number] = [
+      0.15 + i * 0.09,
+      tableTop + DART_WIDTH / 2 + 0.005,
+      TABLE.z,
+    ];
+    dartMesh.position.set(...home);
+    const e = world.createTransformEntity(dartMesh);
+    e.addComponent(PhysicsShape, {
+      shape: PhysicsShapeType.Box,
+      dimensions: [DART_WIDTH, DART_WIDTH, DART_LENGTH],
+      density: 300,
+      restitution: 0.15,
+      friction: 0.6,
+    });
+    e.addComponent(PhysicsBody, {
+      state: PhysicsState.Dynamic,
+      linearDamping: 0.05,
+      angularDamping: 0.85,
+    });
+    e.addComponent(OneHandGrabbable);
+    e.addComponent(RayInteractable);
+    e.addComponent(DistanceGrabbable, {
+      movementMode: MovementMode.MoveFromTarget,
+    });
+    e.addComponent(Dart, { stuck: false, armed: true });
+    e.addComponent(Resettable);
+    e.getVectorView(Resettable, 'home').set(home);
+  });
+
+  // Target dartboard mounted on the far wall
+  buildDartboard(world);
 
   // A pyramid of "cans" against the far wall to knock over
   const canR = 0.06;
@@ -153,7 +199,195 @@ export function buildRoom(world: World) {
   be.addComponent(ResetButton);
 }
 
-/** Puts every ball and can back. Triggered by the red button, the A button, or a ball escaping. */
+/** Builds a throwable dart oriented along local Z (sharp tip at -Z, flights at +Z). */
+function createDartMesh(color: number): Mesh {
+  const barrelGeo = new CylinderGeometry(0.008, 0.011, 0.055, 16);
+  barrelGeo.rotateX(Math.PI / 2);
+  const barrel = new Mesh(barrelGeo, mat(color, 0.35));
+  barrel.castShadow = true;
+
+  // Sharp steel needle tip at -Z
+  const tipGeo = new CylinderGeometry(0.0045, 0.0008, 0.045, 12);
+  tipGeo.rotateX(Math.PI / 2);
+  const tip = new Mesh(tipGeo, mat(0xd4dce6, 0.2));
+  tip.position.set(0, 0, -0.065);
+  tip.castShadow = true;
+  barrel.add(tip);
+
+  // Brass/dark nose collar connecting barrel to tip
+  const noseGeo = new CylinderGeometry(0.011, 0.0045, 0.02, 16);
+  noseGeo.rotateX(Math.PI / 2);
+  const nose = new Mesh(noseGeo, mat(0xd4af37, 0.3));
+  nose.position.set(0, 0, -0.035);
+  barrel.add(nose);
+
+  // Slender rear shaft
+  const shaftGeo = new CylinderGeometry(0.0035, 0.005, 0.048, 12);
+  shaftGeo.rotateX(Math.PI / 2);
+  const shaft = new Mesh(shaftGeo, mat(0x22252a, 0.5));
+  shaft.position.set(0, 0, 0.046);
+  barrel.add(shaft);
+
+  // Crossed tail flights (fins) at +Z
+  const finMat = mat(color, 0.45);
+  const finH = new Mesh(new BoxGeometry(DART_WIDTH, 0.002, 0.042), finMat);
+  finH.position.set(0, 0, 0.066);
+  barrel.add(finH);
+
+  const finV = new Mesh(new BoxGeometry(0.002, DART_WIDTH, 0.042), finMat);
+  finV.position.set(0, 0, 0.066);
+  barrel.add(finV);
+
+  return barrel;
+}
+
+/** Builds a concentric bullseye target dartboard mounted on the far wall. */
+function buildDartboard(world: World) {
+  const { x, y, z, radius, thickness } = DARTBOARD;
+
+  // Dark backing rim disc
+  const backGeo = new CylinderGeometry(radius + 0.025, radius + 0.025, thickness, 48);
+  backGeo.rotateX(Math.PI / 2);
+  const board = new Mesh(backGeo, mat(0x231f20, 0.7));
+  board.position.set(x, y, z);
+  board.receiveShadow = true;
+
+  // Concentric scoring rings stepped slightly in +Z to avoid z-fighting
+  const rings: Array<[number, number]> = [
+    [radius, 0xf5f0e6],          // Outer white ring
+    [radius * 0.78, 0x1e2229],   // Black ring
+    [radius * 0.56, 0x2b82d9],   // Blue ring
+    [radius * 0.36, 0xd9382b],   // Red ring
+    [radius * 0.18, 0xf2c94c],   // Gold bullseye ring
+    [radius * 0.07, 0xd62828],   // Inner double-bullseye
+  ];
+
+  const discThickness = 0.004;
+  rings.forEach(([r, color], idx) => {
+    const ringGeo = new CylinderGeometry(r, r, discThickness, 48);
+    ringGeo.rotateX(Math.PI / 2);
+    const ringMesh = new Mesh(ringGeo, mat(color, 0.55));
+    ringMesh.position.set(0, 0, thickness / 2 + idx * 0.0015);
+    ringMesh.receiveShadow = true;
+    board.add(ringMesh);
+  });
+
+  world.createTransformEntity(board);
+}
+
+/** Sticks thrown darts into the wall dartboard; lets misses bounce/fall off everything else. */
+export class DartSystem extends createSystem({
+  darts: { required: [Dart, PhysicsBody] },
+}) {
+  private pos = new Vector3();
+  private rot = new Quaternion();
+  private forward = new Vector3(0, 0, -1);
+  private stickDir = new Vector3();
+
+  update() {
+    const physics = this.world.getSystem(PhysicsSystem);
+    const boardFrontZ = DARTBOARD.z + DARTBOARD.thickness / 2 + 0.009;
+    const captureZ = boardFrontZ + DART_LENGTH * 0.55;
+
+    for (const e of this.queries.darts.entities) {
+      const obj = e.object3D;
+      if (!obj) continue;
+
+      const isGrabbed = e.hasComponent(Grabbed);
+      const isStuck = e.getValue(Dart, 'stuck');
+
+      if (isGrabbed) {
+        if (isStuck) {
+          unstickDart(e, false);
+        }
+        // Re-arm once pulled away from the board face
+        if (obj.position.z > captureZ + 0.08) {
+          e.setValue(Dart, 'armed', true);
+        }
+        continue;
+      }
+
+      if (isStuck) {
+        // Hold the stuck dart firmly embedded in the dartboard if bumped
+        const sp = e.getVectorView(Dart, 'stuckPos');
+        const dx = obj.position.x - sp[0];
+        const dy = obj.position.y - sp[1];
+        const dz = obj.position.z - sp[2];
+        if (dx * dx + dy * dy + dz * dz > 0.000004) {
+          const sq = e.getVectorView(Dart, 'stuckQuat');
+          this.pos.set(sp[0], sp[1], sp[2]);
+          this.rot.set(sq[0], sq[1], sq[2], sq[3]);
+          physics?.setBodyTransform(e, {
+            position: this.pos,
+            quaternion: this.rot,
+          });
+        }
+        continue;
+      }
+
+      // If it's away from the far wall, make sure it's armed for the next throw
+      if (obj.position.z > captureZ + 0.15) {
+        if (!e.getValue(Dart, 'armed')) {
+          e.setValue(Dart, 'armed', true);
+        }
+        continue;
+      }
+
+      // Dart has reached the far wall plane
+      if (obj.position.z <= captureZ && e.getValue(Dart, 'armed')) {
+        const dx = obj.position.x - DARTBOARD.x;
+        const dy = obj.position.y - DARTBOARD.y;
+        const radialDist = Math.hypot(dx, dy);
+
+        if (radialDist <= DARTBOARD.radius) {
+          // Hit the dartboard! Embed tip-first into the board surface
+          const vel = e.getVectorView(PhysicsBody, '_linearVelocity');
+          this.stickDir.set(vel[0] * 0.12, vel[1] * 0.12, -1).normalize();
+          this.rot.setFromUnitVectors(this.forward, this.stickDir);
+
+          const halfLen = DART_LENGTH / 2;
+          const tipEmbedZ = boardFrontZ - 0.015;
+          this.pos.set(
+            obj.position.x - this.stickDir.x * halfLen,
+            obj.position.y - this.stickDir.y * halfLen,
+            tipEmbedZ - this.stickDir.z * halfLen,
+          );
+
+          e.getVectorView(Dart, 'stuckPos').set([this.pos.x, this.pos.y, this.pos.z]);
+          e.getVectorView(Dart, 'stuckQuat').set([
+            this.rot.x,
+            this.rot.y,
+            this.rot.z,
+            this.rot.w,
+          ]);
+          e.setValue(Dart, 'stuck', true);
+          e.setValue(Dart, 'armed', false);
+          e.setValue(PhysicsBody, 'gravityFactor', 0);
+          e.setValue(PhysicsBody, 'linearDamping', 100);
+          e.setValue(PhysicsBody, 'angularDamping', 100);
+
+          physics?.setBodyTransform(e, {
+            position: this.pos,
+            quaternion: this.rot,
+          });
+        } else {
+          // Hit the bare wall outside the dartboard: disarm so it falls to the floor
+          e.setValue(Dart, 'armed', false);
+        }
+      }
+    }
+  }
+}
+
+function unstickDart(e: Entity, armed: boolean) {
+  e.setValue(Dart, 'stuck', false);
+  e.setValue(Dart, 'armed', armed);
+  e.setValue(PhysicsBody, 'gravityFactor', 1);
+  e.setValue(PhysicsBody, 'linearDamping', 0.05);
+  e.setValue(PhysicsBody, 'angularDamping', 0.85);
+}
+
+/** Puts every ball, dart, and can back. Triggered by the red button, the A button, or escaping. */
 export class ResetSystem extends createSystem({
   items: { required: [Resettable] },
   pressed: { required: [ResetButton, Pressed] },
@@ -162,7 +396,9 @@ export class ResetSystem extends createSystem({
   private rot = new Quaternion();
 
   init() {
-    this.queries.pressed.subscribe('qualify', () => this.resetAll());
+    this.cleanupFuncs.push(
+      this.queries.pressed.subscribe('qualify', () => this.resetAll()),
+    );
   }
 
   resetAll() {
@@ -170,6 +406,9 @@ export class ResetSystem extends createSystem({
   }
 
   private resetOne(e: Entity) {
+    if (e.hasComponent(Dart)) {
+      unstickDart(e, true);
+    }
     const h = e.getVectorView(Resettable, 'home');
     this.pos.set(h[0], h[1], h[2]);
     this.rot.identity();
