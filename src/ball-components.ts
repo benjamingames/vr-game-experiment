@@ -54,3 +54,51 @@ export const SkyCloud = createComponent('SkyCloud', {
   baseY: { type: Types.Float32, default: 5.2 },
   phase: { type: Types.Float32, default: 0 },
 });
+
+/** Tag on any ball (table balls, basketball, bowling ball) that can score in the basketball hoop. */
+export const HoopBall = createComponent('HoopBall', {
+  prevY: { type: Types.Float32, default: 0 },
+  cooldown: { type: Types.Float32, default: 0 },
+});
+
+/** Visual LED pip on the basketball scoreboard or whack-a-mole scoreboard. */
+export const ScorePip = createComponent('ScorePip', {
+  station: { type: Types.Int8, default: 0 }, // 1=Basketball, 2=WhackAMole
+  index: { type: Types.Int8, default: 0 },
+});
+
+/** A musical bar on the 8-note rainbow xylophone. */
+export const XylophoneBar = createComponent('XylophoneBar', {
+  noteIndex: { type: Types.Int8, default: 0 },
+  freq: { type: Types.Float32, default: 261.63 },
+  baseY: { type: Types.Float32, default: 0.85 },
+  flashTimer: { type: Types.Float32, default: 0 },
+  hitCooldown: { type: Types.Float32, default: 0 },
+});
+
+/** A handheld mallet/hammer that can strike xylophone bars, moles, and the carnival striker. */
+export const ToyMallet = createComponent('ToyMallet', {});
+
+/** A pop-up mole in the Whack-a-Mole arcade station. */
+export const Mole = createComponent('Mole', {
+  slotIndex: { type: Types.Int8, default: 0 },
+  state: { type: Types.Int8, default: 0 }, // 0=hidden, 1=up, 2=whacked
+  timer: { type: Types.Float32, default: 1.5 },
+  baseY: { type: Types.Float32, default: 0.72 },
+});
+
+/** Spring-mounted boxing reflex punching bag & carnival striker puck. */
+export const ReflexBag = createComponent('ReflexBag', {
+  tiltX: { type: Types.Float32, default: 0 },
+  tiltZ: { type: Types.Float32, default: 0 },
+  velX: { type: Types.Float32, default: 0 },
+  velZ: { type: Types.Float32, default: 0 },
+  hitCooldown: { type: Types.Float32, default: 0 },
+});
+
+/** Carnival High-Striker target pad and rising puck that rings the top bell. */
+export const CarnivalStriker = createComponent('CarnivalStriker', {
+  puckY: { type: Types.Float32, default: 0.35 },
+  puckVel: { type: Types.Float32, default: 0 },
+  bellFlash: { type: Types.Float32, default: 0 },
+});

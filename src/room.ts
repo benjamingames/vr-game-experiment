@@ -28,15 +28,22 @@ import {
   createSystem,
 } from '@iwsdk/core';
 import {
+  CarnivalStriker,
   Dart,
   FacePart,
   FaceResetButton,
+  HoopBall,
+  Mole,
   RCCar,
   RCControl,
   RCRemote,
+  ReflexBag,
   ResetButton,
   Resettable,
+  ScorePip,
   SkyCloud,
+  ToyMallet,
+  XylophoneBar,
 } from './ball-components.js';
 
 // ---- Tweak these to play around -------------------------------------------
@@ -132,6 +139,7 @@ export function buildRoom(world: World) {
     e.addComponent(DistanceGrabbable, {
       movementMode: MovementMode.MoveFromTarget,
     });
+    e.addComponent(HoopBall, { prevY: home[1], cooldown: 0 });
     e.addComponent(Resettable);
     e.getVectorView(Resettable, 'home').set(home);
   });
@@ -214,6 +222,9 @@ export function buildRoom(world: World) {
 
   // Floating Mario-style stretchy head behind the player (+Z) with its own elastic reset button
   buildStretchyHead(world);
+
+  // 5 Interactive Toy Stations around the perimeter of the room
+  buildFiveToyStations(world);
 }
 
 const RC_CAR_SIZE: [number, number, number] = [0.16, 0.085, 0.24];
@@ -1813,6 +1824,788 @@ export class StretchyFaceSystem extends createSystem({
           bridge.visible = false;
         }
       }
+    }
+  }
+}
+
+// ---- 5 Interactive Toy Stations around the Room ----------------------------
+// 1. Arcade Basketball Hoop + Basketball + LED Scoreboard (Left Wall Front)
+// 2. Mini Bowling Lane + 6 Bowling Pins + Bowling Ball (Right Wall)
+// 3. 8-Note Rainbow Musical Xylophone + 2 Mallets (Left Center Stand)
+// 4. Whack-a-Mole Arcade Cabinet + Foam Hammer (Left Wall Back)
+// 5. Boxing Reflex Speed-Bag + Carnival High-Striker Bell Tower (Right Back)
+
+const HOOP_RIM_POS = { x: -2.42, y: 1.92, z: -1.45, radius: 0.23 };
+const STRIKER_POS = { x: 1.85, z: 2.15, bellY: 2.28 };
+const BAG_BASE_POS = { x: 1.15, y: 0.04, z: 2.15 };
+
+let sharedAudioCtx: AudioContext | null = null;
+function playSynthTone(
+  freq: number,
+  duration = 0.32,
+  type: OscillatorType = 'sine',
+  slideToFreq = 0,
+) {
+  try {
+    const AudioCtx =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    if (!AudioCtx) return;
+    if (!sharedAudioCtx) sharedAudioCtx = new AudioCtx();
+    if (sharedAudioCtx.state === 'suspended') {
+      sharedAudioCtx.resume();
+    }
+    const now = sharedAudioCtx.currentTime;
+    const osc = sharedAudioCtx.createOscillator();
+    const gain = sharedAudioCtx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, now);
+    if (slideToFreq > 0) {
+      osc.frequency.exponentialRampToValueAtTime(slideToFreq, now + duration);
+    }
+    gain.gain.setValueAtTime(0.18, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+    osc.connect(gain);
+    gain.connect(sharedAudioCtx.destination);
+    osc.start(now);
+    osc.stop(now + duration);
+  } catch {
+    // Ignore audio context restrictions before user gesture
+  }
+}
+
+function buildFiveToyStations(world: World) {
+  // ==========================================================================
+  // STATION 1: Arcade Basketball Hoop + Basketball & LED Scoreboard (Left Wall)
+  // ==========================================================================
+  const bbZ = HOOP_RIM_POS.z;
+  // Backboard mounted on left wall (-X, facing +X)
+  staticBox(world, [0.04, 0.78, 1.1], [-2.86, 2.12, bbZ], 0xf4f6f8);
+  // Red shooter's square on backboard
+  const shooterBox = new Mesh(
+    new BoxGeometry(0.01, 0.28, 0.38),
+    mat(0xe63946, 0.4),
+  );
+  shooterBox.position.set(-2.835, 2.02, bbZ);
+  world.createTransformEntity(shooterBox);
+
+  // Orange steel rim made of 8 static collider segments so balls bounce off the rim
+  const rimR = HOOP_RIM_POS.radius;
+  const rimSegs = 8;
+  for (let i = 0; i < rimSegs; i++) {
+    const a = (i / rimSegs) * Math.PI * 2;
+    const rx = HOOP_RIM_POS.x + Math.cos(a) * rimR;
+    const rz = HOOP_RIM_POS.z + Math.sin(a) * rimR;
+    staticBox(world, [0.055, 0.03, 0.14], [rx, HOOP_RIM_POS.y, rz], 0xff5722);
+  }
+
+  // White net strands hanging under the rim
+  const netMat = mat(0xffffff, 0.7);
+  for (let i = 0; i < 10; i++) {
+    const a = (i / 10) * Math.PI * 2;
+    const strand = new Mesh(
+      new CylinderGeometry(0.005, 0.004, 0.26, 8),
+      netMat,
+    );
+    strand.position.set(
+      HOOP_RIM_POS.x + Math.cos(a) * (rimR * 0.85),
+      HOOP_RIM_POS.y - 0.13,
+      HOOP_RIM_POS.z + Math.sin(a) * (rimR * 0.85),
+    );
+    world.createTransformEntity(strand);
+  }
+
+  // 5 Score LED Pips above the backboard
+  for (let i = 0; i < 5; i++) {
+    const pip = new Mesh(
+      new SphereGeometry(0.038, 16, 12),
+      mat(0x2b303a, 0.3),
+    );
+    pip.position.set(-2.82, 2.58, bbZ - 0.32 + i * 0.16);
+    const pe = world.createTransformEntity(pip);
+    pe.addComponent(ScorePip, { station: 1, index: i });
+  }
+
+  // Ball pedestal + full-size Orange Basketball
+  staticBox(world, [0.28, 0.72, 0.28], [-2.15, 0.36, bbZ + 0.65], 0x3d4450);
+  const bballR = 0.105;
+  const bballHome: [number, number, number] = [-2.15, 0.72 + bballR + 0.01, bbZ + 0.65];
+  const bballMesh = new Mesh(
+    new SphereGeometry(bballR, 28, 18),
+    mat(0xe85d04, 0.45),
+  );
+  bballMesh.position.set(...bballHome);
+  bballMesh.castShadow = true;
+  const bballEntity = world.createTransformEntity(bballMesh);
+  bballEntity.addComponent(PhysicsShape, {
+    shape: PhysicsShapeType.Sphere,
+    dimensions: [bballR, 0, 0],
+    density: 380,
+    restitution: 0.78,
+    friction: 0.6,
+  });
+  bballEntity.addComponent(PhysicsBody, {
+    state: PhysicsState.Dynamic,
+    angularDamping: 0.25,
+  });
+  bballEntity.addComponent(OneHandGrabbable);
+  bballEntity.addComponent(RayInteractable);
+  bballEntity.addComponent(DistanceGrabbable, {
+    movementMode: MovementMode.MoveFromTarget,
+  });
+  bballEntity.addComponent(HoopBall, { prevY: bballHome[1], cooldown: 0 });
+  bballEntity.addComponent(Resettable);
+  bballEntity.getVectorView(Resettable, 'home').set(bballHome);
+
+  // ==========================================================================
+  // STATION 2: Mini Bowling Alley Lane + 6 Pins + Bowling Ball (Right Wall)
+  // ==========================================================================
+  const laneX = 2.18;
+  // Smooth maple bowling lane strip & low side bumper rails
+  staticBox(world, [0.76, 0.02, 3.2], [laneX, 0.01, -0.55], 0xd9a05b);
+  staticBox(world, [0.05, 0.08, 3.2], [laneX - 0.405, 0.04, -0.55], 0x5c3a21);
+  staticBox(world, [0.05, 0.08, 3.2], [laneX + 0.405, 0.04, -0.55], 0x5c3a21);
+
+  // 6 Bowling Pins arranged in a 1-2-3 triangle at the far end of the lane
+  const pinR = 0.042;
+  const pinH = 0.24;
+  const pinRows = [1, 2, 3];
+  pinRows.forEach((count, rIdx) => {
+    for (let i = 0; i < count; i++) {
+      const pinBody = new Mesh(
+        new CylinderGeometry(pinR * 0.65, pinR, pinH, 20),
+        mat(0xfafafa, 0.3),
+      );
+      // Red stripe around the neck of each bowling pin
+      const stripe = new Mesh(
+        new CylinderGeometry(pinR * 0.74, pinR * 0.78, 0.032, 18),
+        mat(0xd62828, 0.35),
+      );
+      stripe.position.set(0, pinH * 0.16, 0);
+      pinBody.add(stripe);
+
+      const pinHead = new Mesh(
+        new SphereGeometry(pinR * 0.72, 16, 12),
+        mat(0xfafafa, 0.3),
+      );
+      pinHead.position.set(0, pinH * 0.42, 0);
+      pinBody.add(pinHead);
+
+      const home: [number, number, number] = [
+        laneX + (i - (count - 1) / 2) * 0.15,
+        0.02 + pinH / 2 + 0.002,
+        -1.55 - rIdx * 0.16,
+      ];
+      pinBody.position.set(...home);
+      pinBody.castShadow = true;
+
+      const pe = world.createTransformEntity(pinBody);
+      pe.addComponent(PhysicsShape, {
+        shape: PhysicsShapeType.Cylinder,
+        dimensions: [pinR, pinH, 0],
+        density: 220,
+        restitution: 0.35,
+        friction: 0.4,
+      });
+      pe.addComponent(PhysicsBody, {
+        state: PhysicsState.Dynamic,
+        angularDamping: 0.2,
+      });
+      pe.addComponent(Resettable);
+      pe.getVectorView(Resettable, 'home').set(home);
+    }
+  });
+
+  // Heavy cobalt-blue Bowling Ball on a return rack at the front of the lane
+  staticBox(world, [0.26, 0.55, 0.26], [laneX, 0.275, 1.12], 0x2b303a);
+  const bowlR = 0.095;
+  const bowlHome: [number, number, number] = [laneX, 0.55 + bowlR + 0.01, 1.12];
+  const bowlBall = new Mesh(
+    new SphereGeometry(bowlR, 28, 18),
+    mat(0x1d3557, 0.2),
+  );
+  bowlBall.position.set(...bowlHome);
+  bowlBall.castShadow = true;
+  const bowlEntity = world.createTransformEntity(bowlBall);
+  bowlEntity.addComponent(PhysicsShape, {
+    shape: PhysicsShapeType.Sphere,
+    dimensions: [bowlR, 0, 0],
+    density: 950,
+    restitution: 0.25,
+    friction: 0.25,
+  });
+  bowlEntity.addComponent(PhysicsBody, {
+    state: PhysicsState.Dynamic,
+    angularDamping: 0.15,
+  });
+  bowlEntity.addComponent(OneHandGrabbable);
+  bowlEntity.addComponent(RayInteractable);
+  bowlEntity.addComponent(DistanceGrabbable, {
+    movementMode: MovementMode.MoveFromTarget,
+  });
+  bowlEntity.addComponent(HoopBall, { prevY: bowlHome[1], cooldown: 0 });
+  bowlEntity.addComponent(Resettable);
+  bowlEntity.getVectorView(Resettable, 'home').set(bowlHome);
+
+  // ==========================================================================
+  // STATION 3: 8-Note Rainbow Musical Xylophone + 2 Mallets (Left Center)
+  // ==========================================================================
+  const xyloX = -1.75;
+  const xyloZ = 0.05;
+  const xyloH = 0.78;
+  staticBox(world, [0.46, xyloH, 0.86], [xyloX, xyloH / 2, xyloZ], 0x5c3d24);
+
+  const noteFreqs = [261.63, 293.66, 329.63, 349.23, 392.0, 440.0, 493.88, 523.25];
+  const noteColors = [
+    0xff3b30, 0xff9500, 0xffcc00, 0x34c759,
+    0x00c7be, 0x007aff, 0x5856d6, 0xaf52de,
+  ];
+
+  noteFreqs.forEach((freq, i) => {
+    const barLen = 0.34 - i * 0.018;
+    const barY = xyloH + 0.022;
+    const barZ = xyloZ - 0.31 + i * 0.088;
+    const barMesh = new Mesh(
+      new BoxGeometry(barLen, 0.022, 0.068),
+      mat(noteColors[i], 0.25),
+    );
+    barMesh.position.set(xyloX, barY, barZ);
+    barMesh.castShadow = true;
+    const be = world.createTransformEntity(barMesh);
+    be.addComponent(RayInteractable);
+    be.addComponent(XylophoneBar, {
+      noteIndex: i,
+      freq,
+      baseY: barY,
+      flashTimer: 0,
+      hitCooldown: 0,
+    });
+  });
+
+  // Two grabbable Xylophone Mallets on the front edge of the xylophone stand
+  [-0.12, 0.12].forEach((zOff) => {
+    const handle = new Mesh(
+      new CylinderGeometry(0.01, 0.01, 0.24, 12),
+      mat(0xd9a05b, 0.5),
+    );
+    handle.geometry.rotateZ(Math.PI / 2);
+    const headBall = new Mesh(
+      new SphereGeometry(0.026, 16, 12),
+      mat(0xff3b30, 0.35),
+    );
+    headBall.position.set(-0.12, 0, 0);
+    handle.add(headBall);
+
+    const mHome: [number, number, number] = [xyloX + 0.16, xyloH + 0.03, xyloZ + zOff];
+    handle.position.set(...mHome);
+    const me = world.createTransformEntity(handle);
+    me.addComponent(PhysicsShape, {
+      shape: PhysicsShapeType.Box,
+      dimensions: [0.26, 0.045, 0.045],
+      density: 250,
+      restitution: 0.3,
+      friction: 0.6,
+    });
+    me.addComponent(PhysicsBody, {
+      state: PhysicsState.Dynamic,
+      angularDamping: 0.8,
+    });
+    me.addComponent(OneHandGrabbable);
+    me.addComponent(RayInteractable);
+    me.addComponent(DistanceGrabbable, {
+      movementMode: MovementMode.MoveFromTarget,
+    });
+    me.addComponent(ToyMallet);
+    me.addComponent(Resettable);
+    me.getVectorView(Resettable, 'home').set(mHome);
+  });
+
+  // ==========================================================================
+  // STATION 4: Whack-a-Mole Arcade Cabinet + Foam Hammer (Left Wall Back)
+  // ==========================================================================
+  const wamX = -1.95;
+  const wamZ = 1.65;
+  const wamH = 0.76;
+  staticBox(world, [0.58, wamH, 0.78], [wamX, wamH / 2, wamZ], 0x2b2d42);
+
+  // Backboard header with 5 score lights
+  const wamBack = new Mesh(
+    new BoxGeometry(0.06, 0.42, 0.78),
+    mat(0xef233c, 0.4),
+  );
+  wamBack.position.set(wamX - 0.26, wamH + 0.21, wamZ);
+  world.createTransformEntity(wamBack);
+
+  for (let i = 0; i < 5; i++) {
+    const pip = new Mesh(
+      new SphereGeometry(0.03, 14, 10),
+      mat(0x343a40, 0.3),
+    );
+    pip.position.set(wamX - 0.22, wamH + 0.28, wamZ - 0.24 + i * 0.12);
+    const pe = world.createTransformEntity(pip);
+    pe.addComponent(ScorePip, { station: 2, index: i });
+  }
+
+  // 5 Mole Holes & Pop-Up Moles
+  const moleCoords: Array<[number, number]> = [
+    [wamX - 0.08, wamZ - 0.22],
+    [wamX - 0.08, wamZ + 0.22],
+    [wamX, wamZ],
+    [wamX + 0.12, wamZ - 0.18],
+    [wamX + 0.12, wamZ + 0.18],
+  ];
+
+  moleCoords.forEach(([mx, mz], idx) => {
+    const rim = new Mesh(
+      new CylinderGeometry(0.068, 0.072, 0.02, 20),
+      mat(0x111317, 0.8),
+    );
+    rim.position.set(mx, wamH + 0.01, mz);
+    world.createTransformEntity(rim);
+
+    // Cute Mole with yellow hard-hat and pink nose
+    const moleBody = new Mesh(
+      new CylinderGeometry(0.05, 0.054, 0.14, 18),
+      mat(0x8d5524, 0.55),
+    );
+    const moleHead = new Mesh(
+      new SphereGeometry(0.05, 16, 12),
+      mat(0x8d5524, 0.55),
+    );
+    moleHead.position.set(0, 0.06, 0);
+    moleBody.add(moleHead);
+
+    const hat = new Mesh(
+      new SphereGeometry(0.052, 16, 12),
+      mat(0xffbe0b, 0.35),
+    );
+    hat.scale.set(1.05, 0.55, 1.05);
+    hat.position.set(0, 0.095, 0);
+    moleBody.add(hat);
+
+    const moleNose = new Mesh(
+      new SphereGeometry(0.016, 12, 10),
+      mat(0xff758f, 0.4),
+    );
+    moleNose.position.set(0.048, 0.055, 0);
+    moleBody.add(moleNose);
+
+    const baseY = wamH - 0.04;
+    moleBody.position.set(mx, baseY, mz);
+    const me = world.createTransformEntity(moleBody);
+    me.addComponent(RayInteractable);
+    me.addComponent(Mole, {
+      slotIndex: idx,
+      state: idx % 2, // start a couple of moles popped up immediately
+      timer: 1.0 + idx * 0.55,
+      baseY,
+    });
+  });
+
+  // Grabbable Foam Whack Hammer on the cabinet
+  const hammerShaft = new Mesh(
+    new CylinderGeometry(0.014, 0.014, 0.24, 12),
+    mat(0xf77f00, 0.4),
+  );
+  const hammerHead = new Mesh(
+    new CylinderGeometry(0.042, 0.042, 0.13, 16),
+    mat(0xd62828, 0.4),
+  );
+  hammerHead.geometry.rotateZ(Math.PI / 2);
+  hammerHead.position.set(0, 0.11, 0);
+  hammerShaft.add(hammerHead);
+
+  const hammerHome: [number, number, number] = [wamX + 0.21, wamH + 0.14, wamZ + 0.28];
+  hammerShaft.position.set(...hammerHome);
+  const he = world.createTransformEntity(hammerShaft);
+  he.addComponent(PhysicsShape, {
+    shape: PhysicsShapeType.Box,
+    dimensions: [0.13, 0.26, 0.085],
+    density: 260,
+    restitution: 0.25,
+    friction: 0.6,
+  });
+  he.addComponent(PhysicsBody, { state: PhysicsState.Dynamic, angularDamping: 0.8 });
+  he.addComponent(OneHandGrabbable);
+  he.addComponent(RayInteractable);
+  he.addComponent(DistanceGrabbable, {
+    movementMode: MovementMode.MoveFromTarget,
+  });
+  he.addComponent(ToyMallet);
+  he.addComponent(Resettable);
+  he.getVectorView(Resettable, 'home').set(hammerHome);
+
+  // ==========================================================================
+  // STATION 5: Spring Boxing Reflex Speed-Bag + Carnival High-Striker Bell Tower
+  // ==========================================================================
+  // 5A. Spring Boxing Reflex Speed-Bag (Right-Back area)
+  staticBox(
+    world,
+    [0.44, 0.08, 0.44],
+    [BAG_BASE_POS.x, BAG_BASE_POS.y, BAG_BASE_POS.z],
+    0x22262b,
+  );
+  const bagPivot = new Mesh(
+    new SphereGeometry(0.04, 14, 10),
+    mat(0xadb5bd, 0.3),
+  );
+  bagPivot.position.set(BAG_BASE_POS.x, BAG_BASE_POS.y + 0.04, BAG_BASE_POS.z);
+
+  const bagRod = new Mesh(
+    new CylinderGeometry(0.016, 0.022, 1.18, 14),
+    mat(0xced4da, 0.3),
+  );
+  bagRod.position.set(0, 0.59, 0);
+  bagPivot.add(bagRod);
+
+  const pearBag = new Mesh(
+    new SphereGeometry(0.16, 24, 18),
+    mat(0xc1121f, 0.35),
+  );
+  pearBag.scale.set(1.0, 1.28, 1.0);
+  pearBag.position.set(0, 1.24, 0);
+  pearBag.castShadow = true;
+  bagPivot.add(pearBag);
+
+  const bagEntity = world.createTransformEntity(bagPivot);
+  bagEntity.addComponent(RayInteractable);
+  bagEntity.addComponent(ReflexBag, {
+    tiltX: 0,
+    tiltZ: 0,
+    velX: 0,
+    velZ: 0,
+    hitCooldown: 0,
+  });
+
+  // 5B. Carnival High-Striker Bell Tower right beside the Reflex Bag
+  const { x: sx, z: sz, bellY } = STRIKER_POS;
+  staticBox(world, [0.46, 0.14, 0.46], [sx, 0.07, sz], 0x9b2226);
+
+  const towerMast = new Mesh(
+    new BoxGeometry(0.14, 2.25, 0.08),
+    mat(0xae2012, 0.45),
+  );
+  towerMast.position.set(sx, 1.18, sz + 0.12);
+  world.createTransformEntity(towerMast);
+
+  // Target Strike Button Pad on the base
+  const strikePad = new Mesh(
+    new CylinderGeometry(0.13, 0.15, 0.08, 24),
+    mat(0xfca311, 0.35),
+  );
+  strikePad.position.set(sx, 0.18, sz - 0.04);
+
+  // Rising White Puck on the tower rail
+  const puck = new Mesh(
+    new CylinderGeometry(0.055, 0.055, 0.04, 20),
+    mat(0xffffff, 0.25),
+  );
+  puck.geometry.rotateX(Math.PI / 2);
+  puck.name = 'carnival-puck';
+  puck.position.set(0, 0.17, 0.11);
+  strikePad.add(puck);
+
+  // Golden Bell at the top of the tower
+  const bell = new Mesh(
+    new CylinderGeometry(0.04, 0.12, 0.16, 24),
+    mat(0xffd166, 0.2),
+  );
+  bell.name = 'carnival-bell';
+  bell.position.set(0, bellY - 0.18, 0.11);
+  strikePad.add(bell);
+
+  const strikerEntity = world.createTransformEntity(strikePad);
+  strikerEntity.addComponent(RayInteractable);
+  strikerEntity.addComponent(CarnivalStriker, {
+    puckY: 0.35,
+    puckVel: 0,
+    bellFlash: 0,
+  });
+}
+
+/** Runs all 5 Interactive Toy Stations (Basketball Hoop, Xylophone, Whack-a-Mole, Reflex Bag, High-Striker). */
+export class ToyStationsSystem extends createSystem({
+  hoopBalls: { required: [HoopBall] },
+  scorePips: { required: [ScorePip] },
+  xyloBars: { required: [XylophoneBar] },
+  pressedXylo: { required: [XylophoneBar, Pressed] },
+  mallets: { required: [ToyMallet] },
+  moles: { required: [Mole] },
+  pressedMoles: { required: [Mole, Pressed] },
+  reflexBags: { required: [ReflexBag] },
+  pressedBags: { required: [ReflexBag, Pressed] },
+  strikers: { required: [CarnivalStriker] },
+  pressedStrikers: { required: [CarnivalStriker, Pressed] },
+  pressedReset: { required: [ResetButton, Pressed] },
+}) {
+  private hoopScore = 0;
+  private moleScore = 0;
+  private handPosL = new Vector3();
+  private handPosR = new Vector3();
+
+  init() {
+    this.cleanupFuncs.push(
+      this.queries.pressedXylo.subscribe('qualify', (bar) => {
+        this.strikeXylophoneBar(bar);
+      }),
+      this.queries.pressedMoles.subscribe('qualify', (mole) => {
+        this.whackMole(mole);
+      }),
+      this.queries.pressedBags.subscribe('qualify', (bag) => {
+        bag.setValue(ReflexBag, 'velX', (Math.random() - 0.5) * 8);
+        bag.setValue(ReflexBag, 'velZ', -11);
+        playSynthTone(110, 0.16, 'triangle', 55);
+      }),
+      this.queries.pressedStrikers.subscribe('qualify', (st) => {
+        st.setValue(CarnivalStriker, 'puckVel', 6.8);
+        playSynthTone(180, 0.18, 'triangle', 90);
+      }),
+      this.queries.pressedReset.subscribe('qualify', () => {
+        this.hoopScore = 0;
+        this.moleScore = 0;
+      }),
+    );
+  }
+
+  private strikeXylophoneBar(bar: Entity) {
+    const freq = bar.getValue(XylophoneBar, 'freq') ?? 261.63;
+    bar.setValue(XylophoneBar, 'flashTimer', 0.22);
+    bar.setValue(XylophoneBar, 'hitCooldown', 0.16);
+    playSynthTone(freq, 0.38, 'sine');
+  }
+
+  private whackMole(mole: Entity) {
+    const state = mole.getValue(Mole, 'state') ?? 0;
+    if (state !== 1) return;
+    mole.setValue(Mole, 'state', 2);
+    mole.setValue(Mole, 'timer', 0.45);
+    this.moleScore = (this.moleScore % 5) + 1;
+    playSynthTone(480, 0.2, 'square', 180);
+  }
+
+  update(delta: number) {
+    const dt = Math.min(Math.max(delta, 0.004), 0.033);
+
+    const right = this.input.xr.gamepads.right;
+    if (right?.getButtonDown(InputComponent.A_Button)) {
+      this.hoopScore = 0;
+      this.moleScore = 0;
+    }
+
+    this.player.gripSpaces.left.getWorldPosition(this.handPosL);
+    this.player.gripSpaces.right.getWorldPosition(this.handPosR);
+
+    // 1. Check Basketball Hoop scoring
+    for (const ball of this.queries.hoopBalls.entities) {
+      const obj = ball.object3D;
+      if (!obj) continue;
+      let cd = ball.getValue(HoopBall, 'cooldown') ?? 0;
+      if (cd > 0) {
+        cd = Math.max(0, cd - dt);
+        ball.setValue(HoopBall, 'cooldown', cd);
+      }
+      const prevY = ball.getValue(HoopBall, 'prevY') ?? obj.position.y;
+      const curY = obj.position.y;
+      ball.setValue(HoopBall, 'prevY', curY);
+
+      if (cd <= 0 && prevY >= HOOP_RIM_POS.y && curY < HOOP_RIM_POS.y) {
+        const dx = obj.position.x - HOOP_RIM_POS.x;
+        const dz = obj.position.z - HOOP_RIM_POS.z;
+        if (Math.hypot(dx, dz) < HOOP_RIM_POS.radius * 0.85) {
+          this.hoopScore = (this.hoopScore % 5) + 1;
+          ball.setValue(HoopBall, 'cooldown', 0.6);
+          playSynthTone(587.33, 0.15, 'sine', 880);
+        }
+      }
+    }
+
+    // Update Basketball & Whack-a-Mole Score LED Pips
+    for (const pip of this.queries.scorePips.entities) {
+      const mesh = pip.object3D as Mesh | undefined;
+      if (!mesh) continue;
+      const st = pip.getValue(ScorePip, 'station') ?? 0;
+      const idx = pip.getValue(ScorePip, 'index') ?? 0;
+      const lit = st === 1 ? idx < this.hoopScore : idx < this.moleScore;
+      const m = mesh.material as MeshStandardMaterial;
+      m.color.setHex(lit ? (st === 1 ? 0x2ecc71 : 0xffbe0b) : 0x2b303a);
+    }
+
+    // 2. Update Xylophone Bars & check mallet strikes
+    for (const bar of this.queries.xyloBars.entities) {
+      const barObj = bar.object3D;
+      if (!barObj) continue;
+      const baseY = bar.getValue(XylophoneBar, 'baseY') ?? 0.8;
+      let flash = bar.getValue(XylophoneBar, 'flashTimer') ?? 0;
+      let cd = bar.getValue(XylophoneBar, 'hitCooldown') ?? 0;
+
+      if (cd > 0) {
+        cd = Math.max(0, cd - dt);
+        bar.setValue(XylophoneBar, 'hitCooldown', cd);
+      } else {
+        for (const mallet of this.queries.mallets.entities) {
+          const mObj = mallet.object3D;
+          if (!mObj) continue;
+          const dx = Math.abs(mObj.position.x - barObj.position.x);
+          const dy = Math.abs(mObj.position.y - barObj.position.y);
+          const dz = Math.abs(mObj.position.z - barObj.position.z);
+          if (dx < 0.16 && dy < 0.065 && dz < 0.055) {
+            this.strikeXylophoneBar(bar);
+            flash = 0.22;
+            break;
+          }
+        }
+      }
+
+      if (flash > 0) {
+        flash = Math.max(0, flash - dt);
+        bar.setValue(XylophoneBar, 'flashTimer', flash);
+        barObj.position.y = baseY - 0.008;
+      } else {
+        barObj.position.y = baseY;
+      }
+    }
+
+    // 3. Update Whack-a-Mole pop-ups & mallet/ball hits
+    for (const mole of this.queries.moles.entities) {
+      const mObj = mole.object3D;
+      if (!mObj) continue;
+      let state = mole.getValue(Mole, 'state') ?? 0;
+      let timer = (mole.getValue(Mole, 'timer') ?? 1.0) - dt;
+      const baseY = mole.getValue(Mole, 'baseY') ?? 0.72;
+
+      if (state === 1) {
+        // Check if struck by a mallet or ball
+        for (const mallet of this.queries.mallets.entities) {
+          const hObj = mallet.object3D;
+          if (hObj && hObj.position.distanceToSquared(mObj.position) < 0.025) {
+            this.whackMole(mole);
+            state = 2;
+            timer = 0.45;
+            break;
+          }
+        }
+      }
+
+      if (timer <= 0) {
+        if (state === 0) {
+          state = 1;
+          timer = 1.6 + Math.random() * 1.4;
+        } else {
+          state = 0;
+          timer = 0.9 + Math.random() * 1.8;
+        }
+        mole.setValue(Mole, 'state', state);
+      }
+      mole.setValue(Mole, 'timer', timer);
+
+      const targetY = state === 1 ? baseY + 0.11 : baseY;
+      mObj.position.y += (targetY - mObj.position.y) * Math.min(1, dt * 14);
+      mObj.scale.y = state === 2 ? 0.55 : 1.0;
+    }
+
+    // 4. Update Spring Boxing Reflex Speed-Bag
+    for (const bag of this.queries.reflexBags.entities) {
+      const bObj = bag.object3D;
+      if (!bObj) continue;
+      let tx = bag.getValue(ReflexBag, 'tiltX') ?? 0;
+      let tz = bag.getValue(ReflexBag, 'tiltZ') ?? 0;
+      let vx = bag.getValue(ReflexBag, 'velX') ?? 0;
+      let vz = bag.getValue(ReflexBag, 'velZ') ?? 0;
+      let cd = bag.getValue(ReflexBag, 'hitCooldown') ?? 0;
+
+      if (cd > 0) {
+        cd = Math.max(0, cd - dt);
+      } else {
+        // Check if punched by player hands or hit by a ball/mallet
+        const bagHeadX = BAG_BASE_POS.x + Math.sin(tz) * 1.24;
+        const bagHeadY = BAG_BASE_POS.y + 1.24;
+        const bagHeadZ = BAG_BASE_POS.z - Math.sin(tx) * 1.24;
+
+        const checkHit = (px: number, py: number, pz: number, r: number) => {
+          const dx = bagHeadX - px;
+          const dy = bagHeadY - py;
+          const dz = bagHeadZ - pz;
+          if (dx * dx + dy * dy + dz * dz < r * r) {
+            vx += -dz * 35;
+            vz += dx * 35;
+            cd = 0.22;
+            playSynthTone(115, 0.15, 'triangle', 55);
+          }
+        };
+
+        checkHit(this.handPosL.x, this.handPosL.y, this.handPosL.z, 0.24);
+        checkHit(this.handPosR.x, this.handPosR.y, this.handPosR.z, 0.24);
+        for (const ball of this.queries.hoopBalls.entities) {
+          const bo = ball.object3D;
+          if (bo) checkHit(bo.position.x, bo.position.y, bo.position.z, 0.26);
+        }
+      }
+
+      // Underdamped 2D angular spring so the bag whips back and forth rapidly
+      const k = 95;
+      const damp = 3.2;
+      vx += (-k * tx - damp * vx) * dt;
+      vz += (-k * tz - damp * vz) * dt;
+      tx = Math.max(-0.85, Math.min(0.85, tx + vx * dt));
+      tz = Math.max(-0.85, Math.min(0.85, tz + vz * dt));
+
+      bObj.rotation.x = tx;
+      bObj.rotation.z = tz;
+
+      bag.setValue(ReflexBag, 'tiltX', tx);
+      bag.setValue(ReflexBag, 'tiltZ', tz);
+      bag.setValue(ReflexBag, 'velX', vx);
+      bag.setValue(ReflexBag, 'velZ', vz);
+      bag.setValue(ReflexBag, 'hitCooldown', cd);
+    }
+
+    // 5. Update Carnival High-Striker Bell Tower
+    for (const st of this.queries.strikers.entities) {
+      const sObj = st.object3D;
+      if (!sObj) continue;
+      let py = st.getValue(CarnivalStriker, 'puckY') ?? 0.35;
+      let pv = st.getValue(CarnivalStriker, 'puckVel') ?? 0;
+      let bf = st.getValue(CarnivalStriker, 'bellFlash') ?? 0;
+
+      // Check if struck by a mallet or ball
+      if (py <= 0.38 && pv <= 0.1) {
+        for (const mallet of this.queries.mallets.entities) {
+          const mObj = mallet.object3D;
+          if (mObj && mObj.position.distanceToSquared(sObj.position) < 0.06) {
+            pv = 6.8;
+            playSynthTone(180, 0.18, 'triangle', 90);
+            break;
+          }
+        }
+      }
+
+      if (py > 0.35 || pv !== 0) {
+        pv -= 9.8 * dt;
+        py += pv * dt;
+        if (py >= STRIKER_POS.bellY - 0.12) {
+          py = STRIKER_POS.bellY - 0.12;
+          pv = -Math.abs(pv) * 0.35;
+          bf = 0.45;
+          playSynthTone(1046.5, 0.65, 'sine'); // High C bell ding!
+        } else if (py <= 0.35) {
+          py = 0.35;
+          pv = 0;
+        }
+      }
+
+      if (bf > 0) bf = Math.max(0, bf - dt);
+
+      const puck = sObj.getObjectByName('carnival-puck');
+      if (puck) puck.position.y = py - 0.18;
+
+      const bell = sObj.getObjectByName('carnival-bell') as Mesh | undefined;
+      if (bell) {
+        bell.scale.setScalar(bf > 0 ? 1.18 : 1.0);
+      }
+
+      st.setValue(CarnivalStriker, 'puckY', py);
+      st.setValue(CarnivalStriker, 'puckVel', pv);
+      st.setValue(CarnivalStriker, 'bellFlash', bf);
     }
   }
 }

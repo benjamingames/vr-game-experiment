@@ -7,6 +7,7 @@ import {
   RCCarSystem,
   ResetSystem,
   StretchyFaceSystem,
+  ToyStationsSystem,
 } from './room.js';
 
 World.create(
@@ -24,6 +25,7 @@ World.create(
   world.registerSystem(DartSystem);
   world.registerSystem(RCCarSystem);
   world.registerSystem(StretchyFaceSystem);
+  world.registerSystem(ToyStationsSystem);
   world.registerSystem(ResetSystem);
   buildRoom(world);
 });

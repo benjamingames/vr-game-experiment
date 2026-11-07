@@ -1,14 +1,21 @@
 import { defineComponents } from '@iwsdk/core';
 import {
+  CarnivalStriker,
   Dart,
   FacePart,
   FaceResetButton,
+  HoopBall,
+  Mole,
   RCCar,
   RCControl,
   RCRemote,
+  ReflexBag,
   ResetButton,
   Resettable,
+  ScorePip,
   SkyCloud,
+  ToyMallet,
+  XylophoneBar,
 } from './ball-components.js';
 
 export default defineComponents([
@@ -21,4 +28,11 @@ export default defineComponents([
   FacePart,
   FaceResetButton,
   SkyCloud,
+  HoopBall,
+  ScorePip,
+  XylophoneBar,
+  ToyMallet,
+  Mole,
+  ReflexBag,
+  CarnivalStriker,
 ]);
