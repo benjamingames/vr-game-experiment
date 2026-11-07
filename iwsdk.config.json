@@ -27,19 +27,26 @@
         "position": [
           0,
           1.6,
-          0.6
+          0
         ],
         "lookAt": [
           0,
-          0.9,
+          1.1,
           -0.7
         ]
       }
     },
     "features": {
       "locomotion": {
+        "initialPlayerPosition": [
+          0,
+          0,
+          0.6
+        ],
+        "comfortAssistLevel": 0,
         "turningMethod": "smooth",
-        "enableJumping": false
+        "enableJumping": false,
+        "browserControls": true
       },
       "grabbing": true,
       "physics": true,

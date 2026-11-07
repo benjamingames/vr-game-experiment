@@ -2609,3 +2609,124 @@ export class ToyStationsSystem extends createSystem({
     }
   }
 }
+
+/**
+ * First-person mouse-look & keyboard camera control for 2D desktop browser mode.
+ * Works alongside LocomotionSystem's WASD movement when not in an XR headset session.
+ * - Left-click drag (when not grabbing an object) or Right-click drag: rotate view
+ * - Right-click tap: toggle Pointer Lock (free FPS mouse look without holding a button)
+ * - Q / E keys: smooth turn left / right
+ */
+export class DesktopFirstPersonSystem extends createSystem({
+  grabbed: { required: [Grabbed] },
+  pressed: { required: [Pressed] },
+}) {
+  private yaw = 0;
+  private pitch = -0.22;
+  private isPointerDown = false;
+  private pointerButton = 0;
+  private dragMoved = false;
+  private lastX = 0;
+  private lastY = 0;
+
+  init() {
+    this.camera.rotation.order = 'YXZ';
+    this.yaw = this.camera.rotation.y;
+    this.pitch = this.camera.rotation.x;
+
+    const canvas = this.renderer.domElement;
+
+    const onContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+    };
+
+    const onPointerDown = (e: PointerEvent) => {
+      if (this.world.session) return;
+      this.isPointerDown = true;
+      this.pointerButton = e.button;
+      this.dragMoved = false;
+      this.lastX = e.clientX;
+      this.lastY = e.clientY;
+    };
+
+    const onPointerMove = (e: PointerEvent) => {
+      if (this.world.session) return;
+
+      // 1. Free FPS mouse-look when Pointer Lock is active
+      if (document.pointerLockElement === canvas) {
+        this.yaw -= e.movementX * 0.0022;
+        this.pitch = Math.max(
+          -1.42,
+          Math.min(1.42, this.pitch - e.movementY * 0.0022),
+        );
+        return;
+      }
+
+      // 2. Click-and-drag look (Right-drag anywhere, or Left-drag when not grabbing/pressing an object)
+      if (!this.isPointerDown) return;
+      const isInteractingWithObject =
+        this.pointerButton === 0 &&
+        (this.queries.grabbed.entities.size > 0 ||
+          this.queries.pressed.entities.size > 0);
+      if (isInteractingWithObject) {
+        this.lastX = e.clientX;
+        this.lastY = e.clientY;
+        return;
+      }
+
+      const dx = e.clientX - this.lastX;
+      const dy = e.clientY - this.lastY;
+      this.lastX = e.clientX;
+      this.lastY = e.clientY;
+
+      if (Math.hypot(dx, dy) > 2) {
+        this.dragMoved = true;
+      }
+
+      this.yaw -= dx * 0.0032;
+      this.pitch = Math.max(-1.42, Math.min(1.42, this.pitch - dy * 0.0032));
+    };
+
+    const onPointerUp = (e: PointerEvent) => {
+      if (this.world.session) return;
+      // Quick right-click tap toggles Pointer Lock for hands-free FPS mouse look
+      if (e.button === 2 && !this.dragMoved) {
+        if (document.pointerLockElement === canvas) {
+          document.exitPointerLock?.();
+        } else {
+          canvas.requestPointerLock?.();
+        }
+      }
+      this.isPointerDown = false;
+    };
+
+    canvas.addEventListener('contextmenu', onContextMenu);
+    canvas.addEventListener('pointerdown', onPointerDown);
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+
+    this.cleanupFuncs.push(
+      () => canvas.removeEventListener('contextmenu', onContextMenu),
+      () => canvas.removeEventListener('pointerdown', onPointerDown),
+      () => window.removeEventListener('pointermove', onPointerMove),
+      () => window.removeEventListener('pointerup', onPointerUp),
+    );
+  }
+
+  update(delta: number) {
+    if (this.world.session) return;
+
+    const dt = Math.min(delta, 0.05);
+    if (this.input.keyboard?.getKeyPressed('KeyQ')) {
+      this.yaw += 1.8 * dt;
+    }
+    if (this.input.keyboard?.getKeyPressed('KeyE')) {
+      this.yaw -= 1.8 * dt;
+    }
+
+    this.camera.rotation.order = 'YXZ';
+    this.camera.rotation.y = this.yaw;
+    this.camera.rotation.x = this.pitch;
+    this.camera.rotation.z = 0;
+  }
+}

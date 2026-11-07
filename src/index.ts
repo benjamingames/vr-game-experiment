@@ -4,6 +4,7 @@ import {
   buildRoom,
   CloudSystem,
   DartSystem,
+  DesktopFirstPersonSystem,
   RCCarSystem,
   ResetSystem,
   StretchyFaceSystem,
@@ -17,10 +18,12 @@ World.create(
   const locomotion = world.getSystem(LocomotionSystem);
   if (locomotion) {
     locomotion.config.slidingSpeed.value = 3.0;
+    locomotion.config.comfortAssist.value = 0;
     locomotion.config.turningMethod.value = TurningMethod.SmoothTurn;
     locomotion.config.turningSpeed.value = 120;
   }
 
+  world.registerSystem(DesktopFirstPersonSystem);
   world.registerSystem(CloudSystem);
   world.registerSystem(DartSystem);
   world.registerSystem(RCCarSystem);
