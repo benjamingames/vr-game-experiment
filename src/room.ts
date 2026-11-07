@@ -24,7 +24,14 @@ import {
   World,
   createSystem,
 } from '@iwsdk/core';
-import { Dart, ResetButton, Resettable } from './ball-components.js';
+import {
+  Dart,
+  RCCar,
+  RCControl,
+  RCRemote,
+  ResetButton,
+  Resettable,
+} from './ball-components.js';
 
 // ---- Tweak these to play around -------------------------------------------
 const ROOM = { width: 6, depth: 6, height: 3 }; // meters; player starts at the center
@@ -93,16 +100,16 @@ export function buildRoom(world: World) {
   );
   const tableTop = TABLE.height;
 
-  // Balls on the left side of the table: squeeze (grip) to grab up close, or point + trigger from afar
+  // Balls on the back-left of the table: squeeze (grip) to grab up close, or point + trigger from afar
   BALL_COLORS.forEach((color, i) => {
     const ball = new Mesh(
       new SphereGeometry(BALL_RADIUS, 32, 16),
       mat(color, 0.35),
     );
     const home: [number, number, number] = [
-      -0.44 + i * 0.22,
+      -0.46 + i * 0.22,
       tableTop + BALL_RADIUS + 0.01,
-      TABLE.z,
+      TABLE.z - 0.12,
     ];
     ball.position.set(...home);
     ball.castShadow = true;
@@ -127,13 +134,13 @@ export function buildRoom(world: World) {
     e.getVectorView(Resettable, 'home').set(home);
   });
 
-  // Darts on the right side of the table, pointing toward the wall dartboard (-Z)
+  // Darts on the back-right of the table, pointing toward the wall dartboard (-Z)
   DART_COLORS.forEach((color, i) => {
     const dartMesh = createDartMesh(color);
     const home: [number, number, number] = [
-      0.15 + i * 0.09,
+      0.16 + i * 0.09,
       tableTop + DART_WIDTH / 2 + 0.005,
-      TABLE.z,
+      TABLE.z - 0.12,
     ];
     dartMesh.position.set(...home);
     const e = world.createTransformEntity(dartMesh);
@@ -158,6 +165,9 @@ export function buildRoom(world: World) {
     e.addComponent(Resettable);
     e.getVectorView(Resettable, 'home').set(home);
   });
+
+  // RC Car and its Remote Control side-by-side on the front of the table
+  buildRCCarAndRemote(world, tableTop);
 
   // Target dartboard mounted on the far wall
   buildDartboard(world);
@@ -199,6 +209,225 @@ export function buildRoom(world: World) {
   const be = world.createTransformEntity(btn);
   be.addComponent(RayInteractable);
   be.addComponent(ResetButton);
+}
+
+const RC_CAR_SIZE: [number, number, number] = [0.16, 0.085, 0.24];
+const RC_REMOTE_SIZE: [number, number, number] = [0.26, 0.028, 0.16];
+const THROTTLE_ACTIVE_COLORS = [0x2ecc71, 0x7bed9f, 0xf1c40f, 0xe67e22, 0xe74c3c];
+const THROTTLE_INACTIVE_COLOR = 0x343b44;
+
+/** Builds the drivable RC Car and its multi-button Remote Control side-by-side on the table. */
+function buildRCCarAndRemote(world: World, tableTop: number) {
+  // ---- 1. RC Car (front-center of table, facing -Z) ----
+  const [carW, carH, carD] = RC_CAR_SIZE;
+  const carChassis = new Mesh(
+    new BoxGeometry(carW * 0.86, carH * 0.48, carD * 0.94),
+    mat(0xff5500, 0.3),
+  );
+  const carHome: [number, number, number] = [
+    0.06,
+    tableTop + carH / 2 + 0.006,
+    TABLE.z + 0.16,
+  ];
+  carChassis.position.set(...carHome);
+  carChassis.castShadow = true;
+
+  // Cockpit cabin
+  const cabin = new Mesh(
+    new BoxGeometry(carW * 0.72, carH * 0.42, carD * 0.44),
+    mat(0x1f252d, 0.25),
+  );
+  cabin.position.set(0, carH * 0.38, -carD * 0.03);
+  carChassis.add(cabin);
+
+  // Front bumper & bright headlights at -Z
+  const bumper = new Mesh(
+    new BoxGeometry(carW * 0.92, carH * 0.22, 0.018),
+    mat(0x22262b, 0.5),
+  );
+  bumper.position.set(0, -carH * 0.12, -carD * 0.48);
+  carChassis.add(bumper);
+
+  [-1, 1].forEach((side) => {
+    const light = new Mesh(
+      new BoxGeometry(0.024, 0.014, 0.008),
+      mat(0xfff3b0, 0.15),
+    );
+    light.position.set(side * (carW * 0.28), 0.004, -carD * 0.475);
+    carChassis.add(light);
+  });
+
+  // Rear racing spoiler wing at +Z
+  const wing = new Mesh(
+    new BoxGeometry(carW * 0.88, 0.008, 0.032),
+    mat(0x1f252d, 0.35),
+  );
+  wing.position.set(0, carH * 0.46, carD * 0.42);
+  carChassis.add(wing);
+
+  [-1, 1].forEach((side) => {
+    const strut = new Mesh(
+      new BoxGeometry(0.008, carH * 0.32, 0.016),
+      mat(0x1f252d, 0.4),
+    );
+    strut.position.set(side * (carW * 0.32), carH * 0.28, carD * 0.41);
+    carChassis.add(strut);
+  });
+
+  // Four wheels (front wheels named so RCCarSystem can visually steer them)
+  const wheelGeo = new CylinderGeometry(0.028, 0.028, 0.022, 20);
+  wheelGeo.rotateZ(Math.PI / 2);
+  const hubGeo = new CylinderGeometry(0.015, 0.015, 0.024, 16);
+  hubGeo.rotateZ(Math.PI / 2);
+  const wheelMat = mat(0x1a1c1e, 0.85);
+  const hubMat = mat(0xd8dee9, 0.3);
+
+  const wheelCoords: Array<[number, number, string]> = [
+    [-carW * 0.48, -carD * 0.31, 'rc-wheel-fl'],
+    [carW * 0.48, -carD * 0.31, 'rc-wheel-fr'],
+    [-carW * 0.48, carD * 0.31, 'rc-wheel-rl'],
+    [carW * 0.48, carD * 0.31, 'rc-wheel-rr'],
+  ];
+  wheelCoords.forEach(([wx, wz, name]) => {
+    const wheel = new Mesh(wheelGeo, wheelMat);
+    wheel.name = name;
+    wheel.position.set(wx, -carH * 0.18, wz);
+    const hub = new Mesh(hubGeo, hubMat);
+    wheel.add(hub);
+    carChassis.add(wheel);
+  });
+
+  const carEntity = world.createTransformEntity(carChassis);
+  carEntity.addComponent(PhysicsShape, {
+    shape: PhysicsShapeType.Box,
+    dimensions: RC_CAR_SIZE,
+    density: 450,
+    restitution: 0.15,
+    friction: 0.3,
+  });
+  carEntity.addComponent(PhysicsBody, {
+    state: PhysicsState.Dynamic,
+    linearDamping: 0.2,
+    angularDamping: 0.9,
+  });
+  carEntity.addComponent(OneHandGrabbable);
+  carEntity.addComponent(RayInteractable);
+  carEntity.addComponent(DistanceGrabbable, {
+    movementMode: MovementMode.MoveFromTarget,
+  });
+  carEntity.addComponent(RCCar, { speed: 0, throttle: 0.6 });
+  carEntity.addComponent(Resettable);
+  carEntity.getVectorView(Resettable, 'home').set(carHome);
+
+  // ---- 2. Remote Control next to the RC Car (front-left of table) ----
+  const [remW, remH, remD] = RC_REMOTE_SIZE;
+  const remoteBase = new Mesh(
+    new BoxGeometry(remW, remH, remD),
+    mat(0x282e38, 0.55),
+  );
+  const remoteHome: [number, number, number] = [
+    -0.32,
+    tableTop + remH / 2 + 0.004,
+    TABLE.z + 0.16,
+  ];
+  remoteBase.position.set(...remoteHome);
+  remoteBase.castShadow = true;
+
+  // Telescopic antenna at back-left corner of remote
+  const antenna = new Mesh(
+    new CylinderGeometry(0.0025, 0.004, 0.14, 10),
+    mat(0xcfd6de, 0.25),
+  );
+  antenna.position.set(-remW * 0.42, remH / 2 + 0.07, -remD * 0.38);
+  const antTip = new Mesh(new SphereGeometry(0.006, 12, 8), mat(0xff3b30, 0.3));
+  antTip.position.set(0, 0.07, 0);
+  antenna.add(antTip);
+  remoteBase.add(antenna);
+
+  // Steering indicator bar above Left/Right buttons
+  const steerIndicator = new Mesh(
+    new BoxGeometry(0.056, 0.008, 0.012),
+    mat(0x56ccf2, 0.3),
+  );
+  steerIndicator.name = 'rc-steer-indicator';
+  steerIndicator.position.set(-0.072, remH / 2 + 0.005, -0.046);
+  remoteBase.add(steerIndicator);
+
+  // Throttle slot backing & movable Throttle Lever Handle
+  const slotTrack = new Mesh(
+    new BoxGeometry(0.01, 0.004, 0.076),
+    mat(0x15181d, 0.8),
+  );
+  slotTrack.position.set(0.01, remH / 2 + 0.002, 0);
+  remoteBase.add(slotTrack);
+
+  const throttleKnob = new Mesh(
+    new BoxGeometry(0.052, 0.016, 0.014),
+    mat(0xf2c94c, 0.25),
+  );
+  throttleKnob.name = 'rc-throttle-knob';
+  throttleKnob.position.set(0.01, remH / 2 + 0.012, 0);
+  remoteBase.add(throttleKnob);
+
+  const remoteEntity = world.createTransformEntity(remoteBase);
+  remoteEntity.addComponent(PhysicsShape, {
+    shape: PhysicsShapeType.Box,
+    dimensions: RC_REMOTE_SIZE,
+    density: 500,
+    restitution: 0.1,
+    friction: 0.8,
+  });
+  remoteEntity.addComponent(PhysicsBody, {
+    state: PhysicsState.Dynamic,
+    linearDamping: 0.4,
+    angularDamping: 0.9,
+  });
+  remoteEntity.addComponent(OneHandGrabbable);
+  remoteEntity.addComponent(RCRemote);
+  remoteEntity.addComponent(Resettable);
+  remoteEntity.getVectorView(Resettable, 'home').set(remoteHome);
+
+  // Helper to spawn an interactive button on top of the remote control
+  const addControl = (
+    action: number,
+    size: [number, number, number],
+    offset: [number, number, number],
+    color: number,
+  ) => {
+    const btnMesh = new Mesh(new BoxGeometry(...size), mat(color, 0.35));
+    btnMesh.position.set(
+      remoteHome[0] + offset[0],
+      remoteHome[1] + offset[1],
+      remoteHome[2] + offset[2],
+    );
+    const ce = world.createTransformEntity(btnMesh);
+    ce.addComponent(RayInteractable);
+    ce.addComponent(RCControl, { action });
+    ce.getVectorView(RCControl, 'localOffset').set(offset);
+  };
+
+  const topY = remH / 2 + 0.009;
+
+  // Steer Left (1) & Steer Right (2) buttons on left side of remote
+  addControl(1, [0.046, 0.018, 0.058], [-0.098, topY, 0.012], 0x2b82d9);
+  addControl(2, [0.046, 0.018, 0.058], [-0.044, topY, 0.012], 0x2b82d9);
+
+  // Gas (3, green top-right) & Brake (4, red bottom-right) pedals on right side
+  addControl(3, [0.056, 0.02, 0.056], [0.086, topY + 0.001, -0.032], 0x2ecc71);
+  addControl(4, [0.056, 0.02, 0.056], [0.086, topY + 0.001, 0.034], 0xe74c3c);
+
+  // Throttle Down (-) (5, bottom-center) & Throttle Up (+) (6, top-center)
+  addControl(5, [0.042, 0.016, 0.022], [0.01, topY, 0.056], 0xe67e22);
+  addControl(6, [0.042, 0.016, 0.022], [0.01, topY, -0.056], 0xf2994a);
+
+  // 5 clickable Throttle Bar segments (11..15) in the center column (low to max acceleration)
+  for (let i = 0; i < 5; i++) {
+    const level = i + 1;
+    const zOff = 0.028 - i * 0.014; // +0.028 (level 1) up to -0.028 (level 5)
+    const initialColor =
+      level <= 3 ? THROTTLE_ACTIVE_COLORS[i] : THROTTLE_INACTIVE_COLOR;
+    addControl(10 + level, [0.044, 0.012, 0.011], [0.01, topY - 0.002, zOff], initialColor);
+  }
 }
 
 /** Builds a throwable dart oriented along local Z (sharp tip at -Z, flights at +Z). */
@@ -495,7 +724,216 @@ function unstickDart(e: Entity, armed: boolean) {
   e.setValue(PhysicsBody, 'angularDamping', 0.85);
 }
 
-/** Puts every ball, dart, and can back. Triggered by the red button, the A button, or escaping. */
+/** Drives the RC Car from the Remote Control buttons (steer left/right, gas, brake, throttle). */
+export class RCCarSystem extends createSystem({
+  cars: { required: [RCCar, PhysicsBody] },
+  remotes: { required: [RCRemote] },
+  controls: { required: [RCControl] },
+  pressedControls: { required: [RCControl, Pressed] },
+}) {
+  private carForward = new Vector3();
+  private carUp = new Vector3();
+  private ctrlPos = new Vector3();
+  private uprightRot = new Quaternion();
+  private upAxis = new Vector3(0, 1, 0);
+
+  init() {
+    this.cleanupFuncs.push(
+      this.queries.pressedControls.subscribe('qualify', (ctrl) => {
+        const action = ctrl.getValue(RCControl, 'action') ?? 0;
+        for (const car of this.queries.cars.entities) {
+          const cur = car.getValue(RCCar, 'throttle') ?? 0.6;
+          if (action === 5) {
+            car.setValue(RCCar, 'throttle', Math.max(0.2, Math.round((cur - 0.2) * 10) / 10));
+          } else if (action === 6) {
+            car.setValue(RCCar, 'throttle', Math.min(1.0, Math.round((cur + 0.2) * 10) / 10));
+          } else if (action >= 11 && action <= 15) {
+            car.setValue(RCCar, 'throttle', (action - 10) * 0.2);
+          }
+        }
+      }),
+    );
+  }
+
+  update(delta: number) {
+    const dt = Math.max(delta, 0.005);
+    const physics = this.world.getSystem(PhysicsSystem);
+
+    let steerInput = 0; // +1 = left, -1 = right
+    let gasInput = 0;
+    let brakeInput = 0;
+
+    // 1. Check held buttons on the remote control
+    for (const ctrl of this.queries.controls.entities) {
+      if (!ctrl.hasComponent(Pressed)) continue;
+      const action = ctrl.getValue(RCControl, 'action') ?? 0;
+      if (action === 1) steerInput += 1;
+      else if (action === 2) steerInput -= 1;
+      else if (action === 3) gasInput = 1;
+      else if (action === 4) brakeInput = 1;
+      else if (action >= 11 && action <= 15) {
+        for (const car of this.queries.cars.entities) {
+          car.setValue(RCCar, 'throttle', (action - 10) * 0.2);
+        }
+      }
+    }
+
+    // 2. If the remote control itself is held in hand, also allow thumbstick driving
+    for (const rem of this.queries.remotes.entities) {
+      if (!rem.hasComponent(Grabbed)) continue;
+      const rightPad = this.input.xr.gamepads.right;
+      const leftPad = this.input.xr.gamepads.left;
+      const axesR = rightPad?.getAxesValues(InputComponent.Thumbstick);
+      const axesL = leftPad?.getAxesValues(InputComponent.Thumbstick);
+      const stickX =
+        Math.abs(axesR?.x ?? 0) >= Math.abs(axesL?.x ?? 0)
+          ? (axesR?.x ?? 0)
+          : (axesL?.x ?? 0);
+      const stickY =
+        Math.abs(axesR?.y ?? 0) >= Math.abs(axesL?.y ?? 0)
+          ? (axesR?.y ?? 0)
+          : (axesL?.y ?? 0);
+
+      if (Math.abs(stickX) > 0.15) steerInput = -stickX;
+      if (stickY > 0.15) gasInput = Math.max(gasInput, stickY);
+      else if (stickY < -0.15) brakeInput = Math.max(brakeInput, -stickY);
+
+      if (
+        rightPad?.getButtonDown(InputComponent.B_Button) ||
+        leftPad?.getButtonDown(InputComponent.Y_Button)
+      ) {
+        for (const car of this.queries.cars.entities) {
+          const cur = car.getValue(RCCar, 'throttle') ?? 0.6;
+          const next = cur >= 0.95 ? 0.2 : Math.round((cur + 0.2) * 10) / 10;
+          car.setValue(RCCar, 'throttle', next);
+        }
+      }
+    }
+
+    steerInput = Math.max(-1, Math.min(1, steerInput));
+
+    // 3. Sync remote control buttons & throttle visuals to the remote body
+    let currentThrottle = 0.6;
+    for (const car of this.queries.cars.entities) {
+      currentThrottle = car.getValue(RCCar, 'throttle') ?? 0.6;
+    }
+    const activeLevel = Math.round(currentThrottle / 0.2);
+
+    for (const rem of this.queries.remotes.entities) {
+      const remObj = rem.object3D;
+      if (!remObj) continue;
+
+      const knob = remObj.getObjectByName('rc-throttle-knob');
+      if (knob) {
+        knob.position.z = 0.028 - (activeLevel - 1) * 0.014;
+      }
+      const steerBar = remObj.getObjectByName('rc-steer-indicator');
+      if (steerBar) {
+        steerBar.rotation.y = steerInput * 0.45;
+      }
+
+      for (const ctrl of this.queries.controls.entities) {
+        const ctrlObj = ctrl.object3D as Mesh | undefined;
+        if (!ctrlObj) continue;
+        const action = ctrl.getValue(RCControl, 'action') ?? 0;
+        const off = ctrl.getVectorView(RCControl, 'localOffset');
+        const isDepressed =
+          ctrl.hasComponent(Pressed) ||
+          (action === 1 && steerInput > 0.2) ||
+          (action === 2 && steerInput < -0.2) ||
+          (action === 3 && gasInput > 0.2) ||
+          (action === 4 && brakeInput > 0.2);
+
+        this.ctrlPos
+          .set(off[0], off[1] - (isDepressed ? 0.004 : 0), off[2])
+          .applyQuaternion(remObj.quaternion)
+          .add(remObj.position);
+        ctrlObj.position.copy(this.ctrlPos);
+        ctrlObj.quaternion.copy(remObj.quaternion);
+
+        if (action >= 11 && action <= 15) {
+          const segLevel = action - 10;
+          const matInst = ctrlObj.material as MeshStandardMaterial;
+          matInst.color.setHex(
+            segLevel <= activeLevel
+              ? THROTTLE_ACTIVE_COLORS[segLevel - 1]
+              : THROTTLE_INACTIVE_COLOR,
+          );
+        }
+      }
+    }
+
+    // 4. Update RC Car physics & wheel steering
+    for (const car of this.queries.cars.entities) {
+      const carObj = car.object3D;
+      if (!carObj) continue;
+
+      const fl = carObj.getObjectByName('rc-wheel-fl');
+      const fr = carObj.getObjectByName('rc-wheel-fr');
+      if (fl) fl.rotation.y = steerInput * 0.45;
+      if (fr) fr.rotation.y = steerInput * 0.45;
+
+      if (car.hasComponent(Grabbed)) {
+        car.setValue(RCCar, 'speed', 0);
+        continue;
+      }
+
+      const throttle = car.getValue(RCCar, 'throttle') ?? 0.6;
+      let speed = car.getValue(RCCar, 'speed') ?? 0;
+
+      if (brakeInput > 0) {
+        // Brake rapidly slows the car to a stop
+        const brakeDecel = 12.0 * brakeInput;
+        speed = Math.max(0, speed - brakeDecel * dt);
+      } else if (gasInput > 0) {
+        // Throttle controls how much acceleration Gas gives the car
+        const accel = (1.2 + throttle * 7.5) * gasInput;
+        const maxSpeed = 0.9 + throttle * 4.1;
+        speed = Math.min(speed + accel * dt, maxSpeed);
+      } else {
+        // Natural rolling resistance when coasting
+        speed = Math.max(0, speed - 2.2 * dt);
+      }
+      car.setValue(RCCar, 'speed', speed);
+
+      this.carForward.set(0, 0, -1).applyQuaternion(carObj.quaternion);
+      this.carForward.y = 0;
+      if (this.carForward.lengthSq() > 0.0001) {
+        this.carForward.normalize();
+      } else {
+        this.carForward.set(0, 0, -1);
+      }
+
+      // Self-right the car if it tips over (e.g. after driving off the table edge)
+      this.carUp.set(0, 1, 0).applyQuaternion(carObj.quaternion);
+      const vel = car.getVectorView(PhysicsBody, '_linearVelocity');
+      if (this.carUp.y < 0.85 && Math.abs(vel[1]) < 0.8) {
+        const yaw = Math.atan2(-this.carForward.x, -this.carForward.z);
+        this.uprightRot.setFromAxisAngle(this.upAxis, yaw);
+        physics?.setBodyTransform(car, {
+          position: carObj.position,
+          quaternion: this.uprightRot,
+        });
+      }
+
+      if (
+        (speed > 0.005 || Math.abs(steerInput) > 0.01 || brakeInput > 0) &&
+        !car.hasComponent(PhysicsManipulation)
+      ) {
+        car.addComponent(PhysicsManipulation, {
+          linearVelocity: [
+            this.carForward.x * speed,
+            vel[1],
+            this.carForward.z * speed,
+          ],
+          angularVelocity: [0, steerInput * 2.6, 0],
+        });
+      }
+    }
+  }
+}
+
+/** Puts every ball, dart, RC car/remote, and can back. Triggered by the red button, the A button, or escaping. */
 export class ResetSystem extends createSystem({
   items: { required: [Resettable] },
   pressed: { required: [ResetButton, Pressed] },
@@ -516,6 +954,9 @@ export class ResetSystem extends createSystem({
   private resetOne(e: Entity) {
     if (e.hasComponent(Dart)) {
       unstickDart(e, true);
+    }
+    if (e.hasComponent(RCCar)) {
+      e.setValue(RCCar, 'speed', 0);
     }
     const h = e.getVectorView(Resettable, 'home');
     this.pos.set(h[0], h[1], h[2]);

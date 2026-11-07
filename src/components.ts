@@ -1,4 +1,18 @@
 import { defineComponents } from '@iwsdk/core';
-import { Dart, ResetButton, Resettable } from './ball-components.js';
+import {
+  Dart,
+  RCCar,
+  RCControl,
+  RCRemote,
+  ResetButton,
+  Resettable,
+} from './ball-components.js';
 
-export default defineComponents([Resettable, ResetButton, Dart]);
+export default defineComponents([
+  Resettable,
+  ResetButton,
+  Dart,
+  RCCar,
+  RCRemote,
+  RCControl,
+]);

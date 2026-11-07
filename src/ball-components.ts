@@ -20,3 +20,18 @@ export const Dart = createComponent('Dart', {
   stuckPos: { type: Types.Vec3, default: [0, 0, 0] },
   stuckQuat: { type: Types.Vec4, default: [0, 0, 0, 1] },
 });
+
+/** Drivable RC car state. */
+export const RCCar = createComponent('RCCar', {
+  speed: { type: Types.Float32, default: 0 },
+  throttle: { type: Types.Float32, default: 0.6 }, // 0.2 (low) to 1.0 (max)
+});
+
+/** The handheld/tabletop remote control body for the RC car. */
+export const RCRemote = createComponent('RCRemote', {});
+
+/** Interactive button or throttle bar segment mounted on the RC remote control. */
+export const RCControl = createComponent('RCControl', {
+  action: { type: Types.Int8, default: 0 }, // 1=Left, 2=Right, 3=Gas, 4=Brake, 5=Thr-, 6=Thr+, 11..15=ThrLevel 1..5
+  localOffset: { type: Types.Vec3, default: [0, 0, 0] },
+});
