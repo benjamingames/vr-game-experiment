@@ -1462,9 +1462,14 @@ function buildArchitecture(world: World) {
 
   const mapGltf = AssetManager.getGLTF('gorillaTagMap');
   if (mapGltf?.scene) {
+    const scaledGeometries = new Set<unknown>();
     mapGltf.scene.traverse((child: Object3D) => {
       if ((child as Mesh).isMesh) {
         const m = child as Mesh;
+        if (m.geometry && !scaledGeometries.has(m.geometry)) {
+          scaledGeometries.add(m.geometry);
+          m.geometry.scale(GORILLA_MAP_SCALE, GORILLA_MAP_SCALE, GORILLA_MAP_SCALE);
+        }
         m.castShadow = true;
         m.receiveShadow = true;
         m.frustumCulled = false;
@@ -1480,13 +1485,15 @@ function buildArchitecture(world: World) {
           matStd.needsUpdate = true;
         }
         // Include solid terrain, Giant Stump walls, ramp, gazebo, treehouse, caves, and canyon
-        // in the LocomotionEnvironment collision group while skipping decorative leaf/clay/pillow/button props
+        // while skipping decorative leaf/clay/pillow/button/panel props
         if (
           !matName.includes('leaves') &&
           !matName.includes('clay') &&
           !matName.includes('pillow') &&
           !matName.includes('metalpattern') &&
-          !matName.includes('bush')
+          !matName.includes('bush') &&
+          !matName.includes('darkbrownpanel') &&
+          !matName.includes('bronze')
         ) {
           const walkProxy = new Mesh(m.geometry);
           walkProxy.visible = false;
@@ -1499,8 +1506,8 @@ function buildArchitecture(world: World) {
   }
 
   // Warm ambient point light inside the Giant Stump so all objects inside the stump are well-lit
-  const stumpInteriorLight = new PointLight(0xfff1d6, 1.45, 11.5, 1.2);
-  stumpInteriorLight.position.set(0, 2.75, 0);
+  const stumpInteriorLight = new PointLight(0xfff1d6, 1.6, 16.0, 1.1);
+  stumpInteriorLight.position.set(0, 3.8, 0);
   gorillaTagMapGroup.add(stumpInteriorLight);
 
   world.createTransformEntity(gorillaTagMapGroup);
@@ -2901,6 +2908,7 @@ const sceneSkyRefs: {
 };
 
 // ---- Gorilla Tag Map Fast Spatial Triangle Grid (Zero-Allocation Queries) --
+const GORILLA_MAP_SCALE = 1.6;
 const GORILLA_GRID_CELL = 2.5;
 const gorillaMapGrid = new Map<number, number[]>();
 
@@ -2915,13 +2923,16 @@ function buildGorillaMapSpatialGrid(mapScene: Object3D) {
     if (!mesh.isMesh || !mesh.geometry) return;
     const matObj = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
     const matName = matObj?.name ?? '';
-    // Skip decorative leaf clusters & small cosmetic props so collision only uses solid terrain/structures
+    // Skip decorative leaf clusters, small cosmetic props & indoor stump boards/stages
+    // so collision only uses solid terrain/structures and never blocks stump doorways
     if (
       matName.includes('leaves') ||
       matName.includes('clay') ||
       matName.includes('pillow') ||
       matName.includes('metalpattern') ||
-      matName.includes('bush')
+      matName.includes('bush') ||
+      matName.includes('darkbrownpanel') ||
+      matName.includes('bronze')
     ) {
       return;
     }
@@ -2960,6 +2971,22 @@ function buildGorillaMapSpatialGrid(mapScene: Object3D) {
       const unitNx = nx * invLen;
       const unitNy = ny * invLen;
       const unitNz = nz * invLen;
+
+      // Skip the horizontal cover cap over the Crystal Caves entrance shaft inside the Giant Stump
+      // so players can drop down the shaft (around 265° / -Z) into the Caves!
+      const mx = (ax + bx + cx) / 3;
+      const my = (ay + by + cy) / 3;
+      const mz = (az + bz + cz) / 3;
+      if (
+        mx > -0.88 * GORILLA_MAP_SCALE &&
+        mx < 1.38 * GORILLA_MAP_SCALE &&
+        mz > -4.08 * GORILLA_MAP_SCALE &&
+        mz < -2.02 * GORILLA_MAP_SCALE &&
+        Math.abs(my) < 0.25 * GORILLA_MAP_SCALE &&
+        Math.abs(unitNy) > 0.38
+      ) {
+        continue;
+      }
 
       const minCx = Math.floor(Math.min(ax, bx, cx) / GORILLA_GRID_CELL);
       const maxCx = Math.floor(Math.max(ax, bx, cx) / GORILLA_GRID_CELL);
@@ -3033,7 +3060,7 @@ function sampleGorillaMapVertical(
       const u = (dot11 * dot02 - dot01 * dot12) * invDenom;
       const v = (dot00 * dot12 - dot01 * dot02) * invDenom;
 
-      if (u >= -0.03 && v >= -0.03 && u + v <= 1.03) {
+      if (u >= -0.04 && v >= -0.04 && u + v <= 1.04) {
         const triY = ay + u * (cy - ay) + v * (by - ay);
         if (triY <= footY + 0.95 && triY > bestGroundY) {
           bestGroundY = triY;
@@ -3045,8 +3072,14 @@ function sampleGorillaMapVertical(
     }
   }
 
-  // Inside the Giant Stump's main chamber around (0, 0, 0), keep the floor crisp at y = 0
-  if (px * px + pz * pz < 13.0 && Math.abs(bestGroundY) < 0.12) {
+  // Inside the Giant Stump's central area around (0, 0, 0) (excluding the Caves entrance shaft),
+  // keep the floor level at y = 0
+  const inCaveShaft =
+    px > -0.85 * GORILLA_MAP_SCALE &&
+    px < 1.35 * GORILLA_MAP_SCALE &&
+    pz > -4.05 * GORILLA_MAP_SCALE &&
+    pz < -2.02 * GORILLA_MAP_SCALE;
+  if (!inCaveShaft && px * px + pz * pz < 12.0 && Math.abs(bestGroundY) < 0.16) {
     bestGroundY = 0;
   }
 
@@ -3055,8 +3088,8 @@ function sampleGorillaMapVertical(
 }
 
 /**
- * Checks whether a hand at `(hx, hy, hz)` is within `radius` meters of any surface
- * on the Gorilla Tag map (stump walls, ramp, tree trunks, branches, rocks, caves).
+ * Checks whether a hand at `(hx, hy, hz)` is within `radius` meters of any floor or
+ * surface on the Gorilla Tag map.
  */
 function isHandTouchingGorillaMap(
   hx: number,
@@ -3129,7 +3162,9 @@ const tempSegPt: [number, number] = [0, 0];
 
 /**
  * Prevents the player from moving horizontally through steep walls (like the Giant Stump wall
- * or rock cliffs) while allowing smooth sliding along walls and walking out any Stump opening!
+ * or rock cliffs) while allowing smooth sliding along walls and walking out EVERY Stump opening
+ * (Canyon tunnel, Forest ramp & left exit tunnel, Upper-stump spiral ramp, Gazebo branch doorway,
+ * and Caves shaft)!
  */
 function resolveGorillaMapWallPush(
   px: number,
@@ -3140,7 +3175,10 @@ function resolveGorillaMapWallPush(
 ) {
   let curX = px;
   let curZ = pz;
-  const waistY = footY + 0.95;
+  // Use a narrow mid-body band [footY + 0.58, footY + 0.72] so low step risers (<= footY + 0.58)
+  // and overhead doorway/tunnel arches (>= footY + 0.72) never block horizontal passage!
+  const bandMinY = footY + 0.58;
+  const bandMaxY = footY + 0.72;
   const gx = Math.floor(curX / GORILLA_GRID_CELL);
   const gz = Math.floor(curZ / GORILLA_GRID_CELL);
   const list = gorillaMapGrid.get(gorillaGridKey(gx, gz));
@@ -3149,8 +3187,8 @@ function resolveGorillaMapWallPush(
   if (list) {
     for (let i = 0; i < list.length; i += 12) {
       const absNy = Math.abs(list[i + 10]);
-      // Only push back against steep walls (not walkable floors/ramps)
-      if (absNy > 0.48) continue;
+      // Only push back against vertical/steep walls (not walkable floors/ramps)
+      if (absNy > 0.42) continue;
 
       const ax = list[i];
       const ay = list[i + 1];
@@ -3162,9 +3200,12 @@ function resolveGorillaMapWallPush(
       const cy = list[i + 7];
       const cz = list[i + 8];
 
+      const minY = Math.min(ay, by, cy);
+      const maxY = Math.max(ay, by, cy);
+
       if (
-        waistY < Math.min(ay, by, cy) - 0.1 ||
-        waistY > Math.max(ay, by, cy) + 0.1 ||
+        maxY < bandMinY ||
+        minY > bandMaxY ||
         curX < Math.min(ax, bx, cx) - bodyRadius ||
         curX > Math.max(ax, bx, cx) + bodyRadius ||
         curZ < Math.min(az, bz, cz) - bodyRadius ||
@@ -3223,64 +3264,48 @@ const SETTINGS_BUTTON_LAYOUT: Array<{
   },
   {
     action: 1,
-    offset: [-0.175, 0.2, 0.022],
-    size: [0.31, 0.125, 0.022],
+    offset: [-0.175, 0.16, 0.022],
+    size: [0.31, 0.135, 0.022],
     label: 'DAYTIME',
     sublabel: 'Sunny Blue Sky',
     accentColor: 0x38bdf8,
   },
   {
     action: 2,
-    offset: [0.175, 0.2, 0.022],
-    size: [0.31, 0.125, 0.022],
+    offset: [0.175, 0.16, 0.022],
+    size: [0.31, 0.135, 0.022],
     label: 'NIGHTTIME',
     sublabel: 'Moon & Starry Sky',
     accentColor: 0x818cf8,
   },
   {
-    action: 3,
-    offset: [-0.175, 0.05, 0.022],
-    size: [0.31, 0.125, 0.022],
-    label: 'GIRL HANDS',
-    sublabel: 'Light / Slender Hands',
-    accentColor: 0xf472b6,
-  },
-  {
-    action: 4,
-    offset: [0.175, 0.05, 0.022],
-    size: [0.31, 0.125, 0.022],
-    label: 'BOY HANDS',
-    sublabel: 'Dark / Broad Hands',
-    accentColor: 0x22c55e,
-  },
-  {
     action: 5,
-    offset: [-0.175, -0.1, 0.022],
-    size: [0.31, 0.125, 0.022],
+    offset: [-0.175, -0.02, 0.022],
+    size: [0.31, 0.135, 0.022],
     label: 'NORMAL MODE',
     sublabel: 'Thumbstick / WASD Walk',
     accentColor: 0x06b6d4,
   },
   {
     action: 6,
-    offset: [0.175, -0.1, 0.022],
-    size: [0.31, 0.125, 0.022],
+    offset: [0.175, -0.02, 0.022],
+    size: [0.31, 0.135, 0.022],
     label: 'MONKE MODE',
-    sublabel: 'Climb & Move w/ Hands',
+    sublabel: 'Floor-Touch Hand Move',
     accentColor: 0xf59e0b,
   },
   {
     action: 7,
-    offset: [-0.175, -0.25, 0.022],
-    size: [0.31, 0.125, 0.022],
+    offset: [-0.175, -0.2, 0.022],
+    size: [0.31, 0.135, 0.022],
     label: 'BASIC MAP',
     sublabel: 'Oak Wood Room & Skylights',
     accentColor: 0x10b981,
   },
   {
     action: 8,
-    offset: [0.175, -0.25, 0.022],
-    size: [0.31, 0.125, 0.022],
+    offset: [0.175, -0.2, 0.022],
+    size: [0.31, 0.135, 0.022],
     label: 'MONKE MAP',
     sublabel: 'Giant Stump Spawn & Forest',
     accentColor: 0xa855f7,
@@ -3353,98 +3378,11 @@ function makeHeaderTexture(): CanvasTexture {
 
   ctx.fillStyle = '#94a3b8';
   ctx.font = 'bold 26px sans-serif';
-  ctx.fillText('3-Lines Button / [M] Key  •  Time of Day & VR Hand Tracking Hands', 124, 118);
+  ctx.fillText('3-Lines Button / [M] Key  •  Day/Night, Monke Mode & Map Select', 124, 118);
 
   const tex = new CanvasTexture(canvas);
   tex.needsUpdate = true;
   return tex;
-}
-
-/**
- * Instantiates a cut-and-doubled Left or Right hand model ('girl' or 'boy')
- * from the preloaded GLB + OculusRealisticHand textures.
- */
-function createStyledHandMesh(
-  style: 'girl' | 'boy',
-  side: 'left' | 'right',
-): Group {
-  const holder = new Group();
-  const gltfKey =
-    style === 'girl'
-      ? side === 'left'
-        ? 'girlHandLeft'
-        : 'girlHandRight'
-      : side === 'left'
-        ? 'boyHandLeft'
-        : 'boyHandRight';
-  const albedoKey = style === 'girl' ? 'girlHandAlbedo' : 'boyHandAlbedo';
-  const normalKey = style === 'girl' ? 'girlHandNormal' : 'boyHandNormal';
-
-  const gltf = AssetManager.getGLTF(gltfKey);
-  const albedoTex = AssetManager.getTexture(albedoKey);
-  const normalTex = AssetManager.getTexture(normalKey);
-
-  if (albedoTex) {
-    albedoTex.colorSpace = SRGBColorSpace;
-  }
-
-  const handMat = new MeshStandardMaterial({
-    color: new Color(style === 'girl' ? 0xfff3ed : 0xf4dfd3),
-    map: albedoTex ?? null,
-    normalMap: normalTex ?? null,
-    roughness: style === 'girl' ? 0.54 : 0.65,
-    metalness: 0.03,
-  });
-
-  if (gltf?.scene) {
-    gltf.scene.traverse((child: Object3D) => {
-      if ((child as Mesh).isMesh) {
-        const m = child as Mesh;
-        m.material = handMat;
-        m.castShadow = true;
-        m.receiveShadow = true;
-        m.frustumCulled = false;
-        // Prevent the hand visual itself from intercepting the controller/hand pointer ray
-        m.raycast = () => {};
-      }
-    });
-    holder.add(gltf.scene);
-  }
-
-  // Subtle wrist accessory so Girl vs Boy hands are also recognizable from the wrist
-  if (style === 'girl') {
-    const bracelet = new Mesh(
-      new CylinderGeometry(0.032, 0.033, 0.011, 20),
-      new MeshStandardMaterial({
-        color: new Color(0xf472b6),
-        emissive: new Color(0x831843),
-        emissiveIntensity: 0.25,
-        roughness: 0.25,
-        metalness: 0.7,
-      }),
-    );
-    bracelet.rotation.x = Math.PI / 2;
-    bracelet.scale.set(1.12, 1, 0.82);
-    bracelet.position.set(0, -0.008, 0.052);
-    bracelet.raycast = () => {};
-    holder.add(bracelet);
-  } else {
-    const wristband = new Mesh(
-      new CylinderGeometry(0.037, 0.038, 0.018, 20),
-      new MeshStandardMaterial({
-        color: new Color(0x1e293b),
-        roughness: 0.4,
-        metalness: 0.5,
-      }),
-    );
-    wristband.rotation.x = Math.PI / 2;
-    wristband.scale.set(1.15, 1, 0.84);
-    wristband.position.set(0, -0.01, 0.055);
-    wristband.raycast = () => {};
-    holder.add(wristband);
-  }
-
-  return holder;
 }
 
 /**
@@ -3522,7 +3460,7 @@ function buildSettingsMenuAndLauncher(world: World, tableTop: number) {
   const menuEntity = world.createTransformEntity(panelRoot);
   menuEntity.addComponent(SettingsMenu, { open: false });
 
-  // 3. Interactive Option Buttons (Close, Daytime, Nighttime, Girl Hands, Boy Hands, Normal Body, Monke Mode, Basic Map, Monke Map)
+  // 3. Interactive Option Buttons (Close, Daytime, Nighttime, Normal Mode, Monke Mode, Basic Map, Monke Map)
   for (const cfg of SETTINGS_BUTTON_LAYOUT) {
     const [bw, bh, bd] = cfg.size;
     const isClose = cfg.action === 0;
@@ -3540,7 +3478,7 @@ function buildSettingsMenuAndLauncher(world: World, tableTop: number) {
               cfg.label,
               cfg.sublabel,
               '#' + cfg.accentColor.toString(16).padStart(6, '0'),
-              cfg.action === 1 || cfg.action === 3 || cfg.action === 5 || cfg.action === 7,
+              cfg.action === 1 || cfg.action === 5 || cfg.action === 7,
             ),
             roughness: 0.3,
           }),
@@ -3577,20 +3515,6 @@ function buildSettingsMenuAndLauncher(world: World, tableTop: number) {
       moon.position.set(-0.11, 0.036, bd / 2 + 0.012);
       moon.raycast = () => {};
       btnMesh.add(moon);
-    } else if (cfg.action === 3 || cfg.action === 4) {
-      // Miniature doubled Left + Right 3D hand preview right on the Girl Hands / Boy Hands button!
-      const style = cfg.action === 3 ? 'girl' : 'boy';
-      const miniLeft = createStyledHandMesh(style, 'left');
-      miniLeft.scale.setScalar(0.22);
-      miniLeft.position.set(-0.115, 0.028, bd / 2 + 0.018);
-      miniLeft.rotation.set(-Math.PI / 2, 0, 0);
-      btnMesh.add(miniLeft);
-
-      const miniRight = createStyledHandMesh(style, 'right');
-      miniRight.scale.setScalar(0.22);
-      miniRight.position.set(0.115, 0.028, bd / 2 + 0.018);
-      miniRight.rotation.set(-Math.PI / 2, 0, 0);
-      btnMesh.add(miniRight);
     } else if (cfg.action === 5) {
       // Miniature thumbstick / controller icon on Normal Mode button
       const stickBase = new Mesh(
@@ -3609,7 +3533,7 @@ function buildSettingsMenuAndLauncher(world: World, tableTop: number) {
       stickBase.add(stickTop);
       btnMesh.add(stickBase);
     } else if (cfg.action === 6) {
-      // Miniature Monke head & floating hands icon on Monke Mode button
+      // Miniature Monke head icon on Monke Mode button
       const monkeIcon = new Mesh(
         new SphereGeometry(0.018, 14, 12),
         mat(0x854d0e, 0.55),
@@ -3634,15 +3558,15 @@ function buildSettingsMenuAndLauncher(world: World, tableTop: number) {
 
 /**
  * Manages:
- * 1. Custom cut-and-doubled Left & Right VR hands ('girl' vs 'boy' styles) attached
- *    to the player's left and right hands in VR (supporting both WebXR Hand Tracking
- *    and controllers), with no torso or legs mesh attached to the player in any mode.
+ * 1. Keeping the default clear white XR hand and controller visuals active, with no
+ *    player torso/legs mesh in any mode.
  * 2. Toggling the VR Settings Menu when pressing the 3-lines button on the left
  *    controller (`InputComponent.Menu` / button 7, or X/Y fallback, or `M` key on
  *    desktop, or clicking the physical 3-lines button on the table).
- * 3. Switching between Daytime and Nighttime lighting/sky/clouds, between
- *    Girl Hand-Tracking Hands and Boy Hand-Tracking Hands, between Normal Mode and
- *    Monke Mode, and between the Basic Map (Oak Room) and Monke Map (Giant Stump & Forest).
+ * 3. Switching between Daytime and Nighttime lighting/sky/clouds, between Normal Mode and
+ *    Monke Mode (where gravity drops you to the ground and moving your hands moves you
+ *    ONLY when your hands touch the floor/surface), and between the Basic Map (Oak Room)
+ *    and Monke Map (Giant Stump & Forest with all stump openings passable).
  */
 export class SettingsAndHandsSystem extends createSystem({
   menus: { required: [SettingsMenu] },
@@ -3651,7 +3575,6 @@ export class SettingsAndHandsSystem extends createSystem({
   grabbed: { required: [Grabbed] },
 }) {
   private isNight = false;
-  private handStyle: 'girl' | 'boy' = 'girl';
   private monkeMode = false;
   private monkeMap = false;
   private wasMKeyDown = false;
@@ -3661,14 +3584,7 @@ export class SettingsAndHandsSystem extends createSystem({
   private browserHudBtnMap = new Map<number, HTMLButtonElement>();
   private browserStatusBadge: HTMLSpanElement | null = null;
 
-  private leftHandRig = new Group();
-  private rightHandRig = new Group();
-  private girlLeftHand: Group | null = null;
-  private girlRightHand: Group | null = null;
-  private boyLeftHand: Group | null = null;
-  private boyRightHand: Group | null = null;
-
-  // Monke Mode hand-locomotion state
+  // Monke Mode floor-touch hand-locomotion & Monke Map traversal state
   private handWorldPos = new Vector3();
   private handRelCurr = [new Vector3(), new Vector3()];
   private handRelPrev = [new Vector3(), new Vector3()];
@@ -3676,10 +3592,13 @@ export class SettingsAndHandsSystem extends createSystem({
   private hasHandPrev = [false, false];
   private monkeVel = new Vector3();
   private mapVertSample: [number, number] = [0, 3.3];
+  private handVertSample: [number, number] = [0, 3.3];
   private mapWallSample: [number, number] = [0, 0];
   private wallTeleportPos = new Vector3();
   private wallTeleportQuat = new Quaternion();
   private spawnPos = new Vector3(0, 0, 0.6);
+  private walkForward = new Vector3();
+  private walkRight = new Vector3();
 
   private dirLight: DirectionalLight | null = null;
   private hemiLight: HemisphereLight | null = null;
@@ -3689,30 +3608,15 @@ export class SettingsAndHandsSystem extends createSystem({
   private menuPos = new Vector3(0, 1.42, -1.05);
   private menuQuat = new Quaternion();
   private btnOffset = new Vector3();
-  private jointMat = new Matrix4();
-  private jointScale = new Vector3();
   private upAxis = new Vector3(0, 1, 0);
 
   init() {
-    // Disable default white outline hands & controller meshes so our custom VR hands replace them cleanly
-    this.input.visualAdapters.hand.left.toggleVisual(false);
-    this.input.visualAdapters.hand.right.toggleVisual(false);
-    this.input.visualAdapters.controller.left.toggleVisual(false);
-    this.input.visualAdapters.controller.right.toggleVisual(false);
+    // Keep IWSDK's default clear white XR hands and controllers visible!
+    this.input.visualAdapters.hand.left.toggleVisual(true);
+    this.input.visualAdapters.hand.right.toggleVisual(true);
+    this.input.visualAdapters.controller.left.toggleVisual(true);
+    this.input.visualAdapters.controller.right.toggleVisual(true);
 
-    // Build Left & Right custom VR hand rigs (with both Girl and Boy doubled hand meshes ready to switch)
-    this.girlLeftHand = createStyledHandMesh('girl', 'left');
-    this.girlRightHand = createStyledHandMesh('girl', 'right');
-    this.boyLeftHand = createStyledHandMesh('boy', 'left');
-    this.boyRightHand = createStyledHandMesh('boy', 'right');
-
-    this.leftHandRig.add(this.girlLeftHand, this.boyLeftHand);
-    this.rightHandRig.add(this.girlRightHand, this.boyRightHand);
-
-    this.player.gripSpaces.left.add(this.leftHandRig);
-    this.player.gripSpaces.right.add(this.rightHandRig);
-
-    this.applyHandStyle('girl');
     this.initBrowserSettingsHUD();
 
     this.cleanupFuncs.push(
@@ -3847,8 +3751,6 @@ export class SettingsAndHandsSystem extends createSystem({
       const isActive =
         (cfg.action === 1 && !this.isNight) ||
         (cfg.action === 2 && this.isNight) ||
-        (cfg.action === 3 && this.handStyle === 'girl') ||
-        (cfg.action === 4 && this.handStyle === 'boy') ||
         (cfg.action === 5 && !this.monkeMode) ||
         (cfg.action === 6 && this.monkeMode) ||
         (cfg.action === 7 && !this.monkeMap) ||
@@ -3871,14 +3773,6 @@ export class SettingsAndHandsSystem extends createSystem({
       this.applyTimeOfDay(true);
       this.refreshMenuButtonTextures();
       playSynthTone(440, 0.22, 'sine', 329.63);
-    } else if (action === 3) {
-      this.applyHandStyle('girl');
-      this.refreshMenuButtonTextures();
-      playSynthTone(659.25, 0.16, 'triangle', 783.99);
-    } else if (action === 4) {
-      this.applyHandStyle('boy');
-      this.refreshMenuButtonTextures();
-      playSynthTone(392.0, 0.16, 'triangle', 523.25);
     } else if (action === 5) {
       this.applyMonkeMode(false);
       this.refreshMenuButtonTextures();
@@ -3915,8 +3809,8 @@ export class SettingsAndHandsSystem extends createSystem({
     }
     if (sceneSkyRefs.skyCanopy) {
       if (isMonkeMap) {
-        sceneSkyRefs.skyCanopy.scale.set(22, 1, 28);
-        sceneSkyRefs.skyCanopy.position.set(0, 72, 0);
+        sceneSkyRefs.skyCanopy.scale.set(28, 1, 34);
+        sceneSkyRefs.skyCanopy.position.set(0, 88, 0);
       } else {
         sceneSkyRefs.skyCanopy.scale.set(1, 1, 1);
         sceneSkyRefs.skyCanopy.position.set(0, 6.7, 0);
@@ -3924,14 +3818,21 @@ export class SettingsAndHandsSystem extends createSystem({
     }
 
     // Move the 4 indoor oak wall static physics colliders & ceiling collider out of the way in Monke Map,
-    // and swap LocomotionEnvironment between the Basic Oak Room and the Gorilla Tag Map so the player
-    // can walk or climb out through any of the openings in the Giant Stump!
+    // and remove them from LocomotionSystem BEFORE removing the LocomotionEnvironment component so
+    // Locomotor's internal handle is properly unregistered!
     const physics = this.world.getSystem(PhysicsSystem);
+    const locomotion = this.world.getSystem(LocomotionSystem) as unknown as {
+      config?: { slidingSpeed: { value: number } };
+      setPlayerPosition?: (p: Vector3) => void;
+      removeEnvironmentFromEngine?: (e: Entity) => void;
+    } | undefined;
+
     this.wallTeleportQuat.identity();
     for (const wall of sceneSkyRefs.wallColliders) {
       wall.mesh.visible = !isMonkeMap;
       if (isMonkeMap) {
         if (wall.entity.hasComponent(LocomotionEnvironment)) {
+          locomotion?.removeEnvironmentFromEngine?.(wall.entity);
           wall.entity.removeComponent(LocomotionEnvironment);
         }
       } else {
@@ -3953,6 +3854,7 @@ export class SettingsAndHandsSystem extends createSystem({
     if (sceneSkyRefs.floorEntity) {
       if (isMonkeMap) {
         if (sceneSkyRefs.floorEntity.hasComponent(LocomotionEnvironment)) {
+          locomotion?.removeEnvironmentFromEngine?.(sceneSkyRefs.floorEntity);
           sceneSkyRefs.floorEntity.removeComponent(LocomotionEnvironment);
         }
       } else {
@@ -3968,6 +3870,7 @@ export class SettingsAndHandsSystem extends createSystem({
         }
       } else {
         if (sceneSkyRefs.gorillaTagWalkableEntity.hasComponent(LocomotionEnvironment)) {
+          locomotion?.removeEnvironmentFromEngine?.(sceneSkyRefs.gorillaTagWalkableEntity);
           sceneSkyRefs.gorillaTagWalkableEntity.removeComponent(LocomotionEnvironment);
         }
       }
@@ -3986,11 +3889,18 @@ export class SettingsAndHandsSystem extends createSystem({
       });
     }
 
+    // In Monke Map or Monke Mode, our spatial-grid solver handles smooth ground/ramp/tunnel collision
+    // so Locomotor's 1.0m-wide capsule never blocks narrow stump tunnels or steps!
+    if (locomotion?.config) {
+      locomotion.config.slidingSpeed.value =
+        this.monkeMode || this.monkeMap ? 0.0001 : 3.0;
+    }
+
     // Spawn the player inside the Giant Stump (0, 0, 0.6) in Monke Map or in front of the table in Basic Room
     this.monkeVel.set(0, 0, 0);
     this.spawnPos.set(0, 0, 0.6);
     this.player.position.copy(this.spawnPos);
-    this.world.getSystem(LocomotionSystem)?.setPlayerPosition(this.spawnPos);
+    locomotion?.setPlayerPosition?.(this.spawnPos);
     this.world.getSystem(ResetSystem)?.resetAll();
 
     // If the floating Settings Menu is currently open, keep it positioned right in front of the player at the spawnpoint
@@ -4021,24 +3931,9 @@ export class SettingsAndHandsSystem extends createSystem({
     this.hasHandPrev[1] = false;
     this.monkeVel.set(0, 0, 0);
 
-    // Disable joystick sliding while in Monke Mode so movement is driven by your hands
-    const locomotion = this.world.getSystem(LocomotionSystem);
-    if (locomotion) {
-      locomotion.config.slidingSpeed.value = enabled ? 0.0001 : 3.0;
-    }
-
     // Switching to Monke Mode automatically spawns you in the Monke Map (Giant Stump);
     // switching back to Normal Mode returns to the Basic Map (and you can also toggle maps separately!)
     this.applyMapMode(enabled);
-  }
-
-  private applyHandStyle(style: 'girl' | 'boy') {
-    this.handStyle = style;
-    const isGirl = style === 'girl';
-    if (this.girlLeftHand) this.girlLeftHand.visible = isGirl;
-    if (this.girlRightHand) this.girlRightHand.visible = isGirl;
-    if (this.boyLeftHand) this.boyLeftHand.visible = !isGirl;
-    if (this.boyRightHand) this.boyRightHand.visible = !isGirl;
   }
 
   private findSceneLights() {
@@ -4101,8 +3996,6 @@ export class SettingsAndHandsSystem extends createSystem({
       const isActive =
         (action === 1 && !this.isNight) ||
         (action === 2 && this.isNight) ||
-        (action === 3 && this.handStyle === 'girl') ||
-        (action === 4 && this.handStyle === 'boy') ||
         (action === 5 && !this.monkeMode) ||
         (action === 6 && this.monkeMode) ||
         (action === 7 && !this.monkeMap) ||
@@ -4198,54 +4091,13 @@ export class SettingsAndHandsSystem extends createSystem({
     this.camera.getWorldPosition(this.headPos);
     this.camera.getWorldDirection(this.headDir);
 
-    // 1. Keep default XR visuals hidden so our custom Girl / Boy VR hands are the active hands
     const isHoldingObject = this.queries.grabbed.entities.size > 0;
 
+    // 1. MONKE MODE: Move ONLY when your hands touch the floor / ground surface (no air-floating!)
     for (let idx = 0; idx < 2; idx++) {
       const side = idx === 0 ? 'left' : 'right';
-      const handAdapter = this.input.visualAdapters.hand[side];
-      const ctrlAdapter = this.input.visualAdapters.controller[side];
-      if (handAdapter.visual) handAdapter.visual.model.visible = false;
-      if (ctrlAdapter.visual) ctrlAdapter.visual.model.visible = false;
-
-      const rig = side === 'left' ? this.leftHandRig : this.rightHandRig;
-      const primary = this.input.getPrimaryInputSource(side);
-      const isHandTracking = Boolean(primary?.hand);
-
-      const handJoints = (
-        handAdapter as unknown as { jointTransforms?: Float32Array }
-      ).jointTransforms;
-
-      if (isHandTracking && handJoints && handJoints.length >= 176) {
-        // Joint 10 in WebXR Hand Input is 'middle-finger-metacarpal' (center of palm in gripSpace)
-        this.jointMat.fromArray(handJoints, 10 * 16);
-        if (this.jointMat.elements[15] !== 0) {
-          this.jointMat.decompose(
-            rig.position,
-            rig.quaternion,
-            this.jointScale,
-          );
-        }
-      } else {
-        // Controller gripSpace pose: center at grip origin with natural inward wrist roll
-        rig.position.set(0, 0, 0);
-        rig.rotation.set(0, 0, side === 'right' ? -0.52 : 0.52);
-      }
-
-      // Subtle hand flex when pinching or pulling trigger/grip
-      const gp = this.input.gamepads[side];
-      const squeezeVal = Math.max(
-        gp?.getButtonValue(InputComponent.Trigger) ?? 0,
-        gp?.getButtonValue(InputComponent.Squeeze) ?? 0,
-        handAdapter.getPinchStrength(),
-      );
-      const scaleZ = 1 - squeezeVal * 0.1;
-      const scaleY = 1 - squeezeVal * 0.06;
-      rig.scale.set(1, scaleY, scaleZ);
-
-      // ---- MONKE MODE HAND LOCOMOTION ----
       if (this.monkeMode) {
-        rig.getWorldPosition(this.handWorldPos);
+        this.player.gripSpaces[side].getWorldPosition(this.handWorldPos);
         // Track hand offset relative to player rig so moving player.position doesn't feed back
         this.handRelCurr[idx]
           .copy(this.handWorldPos)
@@ -4262,42 +4114,48 @@ export class SettingsAndHandsSystem extends createSystem({
             const hy = this.handWorldPos.y;
             const hz = this.handWorldPos.z;
 
-            // Check if hand is touching the Giant Stump floor, table, or any Gorilla Tag map wall/ramp/branch/tree
-            const nearFloor = hy <= this.player.position.y + 0.38;
-            const nearTable =
-              Math.abs(hx) <= TABLE.width / 2 + 0.16 &&
-              Math.abs(hz - TABLE.z) <= TABLE.depth / 2 + 0.16 &&
-              hy >= 0 &&
-              hy <= TABLE.height + 0.24;
-            const nearMapSurface = isHandTouchingGorillaMap(hx, hy, hz, 0.42);
-            const touchingSurface = nearFloor || nearTable || nearMapSurface;
+            // Check if the hand is touching the center table top
+            const touchingTable =
+              Math.abs(hx) <= TABLE.width / 2 + 0.14 &&
+              Math.abs(hz - TABLE.z) <= TABLE.depth / 2 + 0.14 &&
+              hy >= TABLE.height - 0.12 &&
+              hy <= TABLE.height + 0.22;
 
-            // Also allow air-pushing by holding Grip/Trigger/Pinch OR swinging arms downward/backward
-            const isGripping = squeezeVal > 0.35;
-            const isArmSwingStroke =
-              hy < this.headPos.y - 0.14 &&
-              (this.handDelta.y < -0.0025 ||
-                (Math.hypot(this.handDelta.x, this.handDelta.z) / dt > 0.42 &&
-                  this.handDelta.y <= 0.004));
+            // Check if the hand is actually touching the floor / ground / ramp under the hand
+            let touchingFloor = touchingTable || (hy >= this.player.position.y - 0.25 && hy <= this.player.position.y + 0.30);
 
-            if (touchingSurface || isGripping || isArmSwingStroke) {
-              const pushGain = touchingSurface ? 1.6 : isGripping ? 1.48 : 1.28;
+            if (!touchingFloor && this.monkeMap) {
+              sampleGorillaMapVertical(hx, this.player.position.y, hz, this.handVertSample);
+              const handGroundY = this.handVertSample[0];
+              if (handGroundY > -100 && hy >= handGroundY - 0.18 && hy <= handGroundY + 0.30) {
+                touchingFloor = true;
+              } else if (
+                hy <= this.player.position.y + 0.45 &&
+                isHandTouchingGorillaMap(hx, hy, hz, 0.24)
+              ) {
+                touchingFloor = true;
+              }
+            }
+
+            if (touchingFloor) {
+              const pushGain = 1.65;
               const px = -this.handDelta.x * pushGain;
-              const py = Math.max(-0.04, -this.handDelta.y * pushGain);
               const pz = -this.handDelta.z * pushGain;
 
               this.player.position.x += px;
-              this.player.position.y += py;
               this.player.position.z += pz;
 
-              // Impart launch momentum when pushing off with speed
+              // Impart horizontal ground push momentum
               const vx = px / dt;
-              const vy = py / dt;
               const vz = pz / dt;
-              this.monkeVel.x = this.monkeVel.x * 0.45 + vx * 0.65;
-              this.monkeVel.z = this.monkeVel.z * 0.45 + vz * 0.65;
-              if (vy > 0.35) {
-                this.monkeVel.y = Math.min(4.8, Math.max(this.monkeVel.y, vy * 0.75));
+              this.monkeVel.x = this.monkeVel.x * 0.4 + vx * 0.65;
+              this.monkeVel.z = this.monkeVel.z * 0.4 + vz * 0.65;
+
+              // Only give a small upward hop when slamming a hand sharply downward into the floor
+              // (never add continuous upward lift that would make you float while moving hands!)
+              const downSpeed = -this.handDelta.y / dt;
+              if (downSpeed > 1.05 && this.monkeVel.y <= 0.25) {
+                this.monkeVel.y = Math.min(2.6, downSpeed * 0.55);
               }
             }
           }
@@ -4310,15 +4168,53 @@ export class SettingsAndHandsSystem extends createSystem({
       }
     }
 
-    // Integrate Monke Mode hand-locomotion momentum, gravity, and Gorilla Tag map collision
-    // (In Normal Mode, LocomotionSystem handles WASD/thumbstick walking against LocomotionEnvironment!)
-    if (this.monkeMode) {
+    // In Normal Mode on the Monke Map, drive WASD / thumbstick walking through our opening-passable
+    // spatial solver so the player can walk through every Giant Stump opening in Normal Mode too!
+    if (!this.monkeMode && this.monkeMap) {
+      this.walkForward.copy(this.headDir);
+      this.walkForward.y = 0;
+      if (this.walkForward.lengthSq() > 0.0001) {
+        this.walkForward.normalize();
+      } else {
+        this.walkForward.set(0, 0, -1);
+      }
+      this.walkRight.set(-this.walkForward.z, 0, this.walkForward.x);
+
+      let moveFwd = 0;
+      let moveStrafe = 0;
+      const kb = this.input.keyboard;
+      if (kb) {
+        if (kb.getKeyPressed('KeyW') || kb.getKeyPressed('ArrowUp')) moveFwd += 1;
+        if (kb.getKeyPressed('KeyS') || kb.getKeyPressed('ArrowDown')) moveFwd -= 1;
+        if (kb.getKeyPressed('KeyD') || kb.getKeyPressed('ArrowRight')) moveStrafe += 1;
+        if (kb.getKeyPressed('KeyA') || kb.getKeyPressed('ArrowLeft')) moveStrafe -= 1;
+      }
+      const gpLeft = this.input.gamepads.left;
+      const axes = gpLeft?.getAxesValues(InputComponent.Thumbstick);
+      if (axes) {
+        if (Math.abs(axes.x) > 0.12) moveStrafe += axes.x;
+        if (Math.abs(axes.y) > 0.12) moveFwd -= axes.y;
+      }
+
+      const len = Math.hypot(moveFwd, moveStrafe);
+      if (len > 0.01) {
+        const scale = (Math.min(1, len) * 3.4 * dt) / len;
+        this.player.position.x +=
+          (this.walkForward.x * moveFwd + this.walkRight.x * moveStrafe) * scale;
+        this.player.position.z +=
+          (this.walkForward.z * moveFwd + this.walkRight.z * moveStrafe) * scale;
+      }
+    }
+
+    // Integrate gravity, momentum, and collision when in Monke Mode OR when on the Monke Map
+    if (this.monkeMode || this.monkeMap) {
       this.player.position.x += this.monkeVel.x * dt;
       this.player.position.y += this.monkeVel.y * dt;
       this.player.position.z += this.monkeVel.z * dt;
 
       if (this.monkeMap) {
         // Resolve horizontal wall collision against the Giant Stump walls, trees, rocks & canyon
+        // using a sleek 0.20m radius so all stump openings and tunnels are easily passable!
         const headOffsetX = this.headPos.x - this.player.position.x;
         const headOffsetZ = this.headPos.z - this.player.position.z;
         const bodyX = this.player.position.x + headOffsetX;
@@ -4328,13 +4224,13 @@ export class SettingsAndHandsSystem extends createSystem({
           bodyX,
           this.player.position.y,
           bodyZ,
-          0.32,
+          0.20,
           this.mapWallSample,
         );
         this.player.position.x = this.mapWallSample[0] - headOffsetX;
         this.player.position.z = this.mapWallSample[1] - headOffsetZ;
 
-        // Sample Gorilla Tag map ground/ramp/branch height & ceiling height under the player
+        // Sample Gorilla Tag map ground/ramp/branch height under the player
         sampleGorillaMapVertical(
           this.mapWallSample[0],
           this.player.position.y,
@@ -4342,9 +4238,8 @@ export class SettingsAndHandsSystem extends createSystem({
           this.mapVertSample,
         );
         let groundY = this.mapVertSample[0];
-        const ceilingY = this.mapVertSample[1];
 
-        // Inside the Giant Stump, also allow jumping onto the center table!
+        // Inside the Giant Stump, also allow stepping onto the center table!
         const overTable =
           Math.abs(this.mapWallSample[0]) < TABLE.width / 2 - 0.04 &&
           Math.abs(this.mapWallSample[1] - TABLE.z) < TABLE.depth / 2 - 0.04 &&
@@ -4354,9 +4249,10 @@ export class SettingsAndHandsSystem extends createSystem({
           groundY = TABLE.height;
         }
 
+        // Always pull the player down with crisp gravity (12.5 m/s²) when above the floor so you drop immediately!
         if (groundY > -100) {
-          if (this.player.position.y > groundY) {
-            this.monkeVel.y -= 9.2 * dt;
+          if (this.player.position.y > groundY + 0.005) {
+            this.monkeVel.y -= 12.5 * dt;
             if (this.player.position.y + this.monkeVel.y * dt <= groundY) {
               this.player.position.y = groundY;
               if (this.monkeVel.y < 0) this.monkeVel.y = 0;
@@ -4366,16 +4262,7 @@ export class SettingsAndHandsSystem extends createSystem({
             if (this.monkeVel.y < 0) this.monkeVel.y = 0;
           }
         } else {
-          this.monkeVel.y -= 9.2 * dt;
-        }
-
-        // Prevent head from clipping above a low ceiling (such as inside the Giant Stump or cave tunnels)
-        if (ceilingY < 1000) {
-          const maxFootY = ceilingY - 1.45;
-          if (this.player.position.y > maxFootY) {
-            this.player.position.y = Math.max(groundY > -100 ? groundY : -100, maxFootY);
-            if (this.monkeVel.y > 0) this.monkeVel.y = 0;
-          }
+          this.monkeVel.y -= 12.5 * dt;
         }
       } else {
         // Monke Mode inside the Basic Oak Wood Room
@@ -4385,8 +4272,12 @@ export class SettingsAndHandsSystem extends createSystem({
           this.player.position.y >= TABLE.height - 0.18;
         const groundY = overTable ? TABLE.height : 0;
 
-        if (this.player.position.y > groundY) {
-          this.monkeVel.y -= 9.2 * dt;
+        if (this.player.position.y > groundY + 0.005) {
+          this.monkeVel.y -= 12.5 * dt;
+          if (this.player.position.y + this.monkeVel.y * dt <= groundY) {
+            this.player.position.y = groundY;
+            if (this.monkeVel.y < 0) this.monkeVel.y = 0;
+          }
         } else {
           this.player.position.y = groundY;
           if (this.monkeVel.y < 0) this.monkeVel.y = 0;
@@ -4400,24 +4291,18 @@ export class SettingsAndHandsSystem extends createSystem({
       }
 
       // Safety respawn inside the Giant Stump if the player ever falls below the map
-      if (this.player.position.y < -65) {
+      if (this.player.position.y < -85) {
         this.spawnPos.set(0, 0, 0.6);
         this.player.position.copy(this.spawnPos);
         this.monkeVel.set(0, 0, 0);
       }
 
-      // Keep LocomotionSystem synchronized with the hand-driven player position
-      // so LocomotionSystem.update() never overwrites player.position back to the spawnpoint!
+      // Keep LocomotionSystem synchronized with the player position
       this.world.getSystem(LocomotionSystem)?.setPlayerPosition(this.player.position);
 
-      const damping = Math.exp(-3.2 * dt);
+      const damping = Math.exp(-4.2 * dt);
       this.monkeVel.x *= damping;
       this.monkeVel.z *= damping;
-    } else if (this.monkeMap && this.player.position.y < -65) {
-      // Safety respawn in Normal Mode if the player walks off a cliff edge in Monke Map
-      this.spawnPos.set(0, 0, 0.6);
-      this.player.position.copy(this.spawnPos);
-      this.world.getSystem(LocomotionSystem)?.setPlayerPosition(this.spawnPos);
     }
 
     // 2. Check 3-Lines Menu Button on left Quest controller (InputComponent.Menu / button 7, or X/Y fallback)
@@ -4432,7 +4317,7 @@ export class SettingsAndHandsSystem extends createSystem({
       playSynthTone(520, 0.12, 'sine', 660);
     }
 
-    // 4. Desktop keyboard shortcuts: 'M' toggles Settings Menu, 'G' toggles Monke Mode
+    // 3. Desktop keyboard shortcuts: 'M' toggles Settings Menu, 'G' toggles Monke Mode
     const isMDown = Boolean(this.input.keyboard?.getKeyPressed('KeyM'));
     if (isMDown && !this.wasMKeyDown) {
       this.toggleMenu();
