@@ -6,6 +6,7 @@ import {
   CylinderGeometry,
   DirectionalLight,
   DistanceGrabbable,
+  DoubleSide,
   Entity,
   Grabbed,
   Group,
@@ -532,6 +533,11 @@ function buildDartboard(world: World) {
     ringMesh.receiveShadow = true;
     board.add(ringMesh);
   });
+
+  // Wooden support post so the dartboard stands solidly inside the Giant Stump too
+  const post = new Mesh(new CylinderGeometry(0.045, 0.055, y, 16), mat(0x5c3a21, 0.7));
+  post.position.set(0, -y / 2, -thickness * 0.4);
+  board.add(post);
 
   world.createTransformEntity(board);
 }
@@ -1202,7 +1208,11 @@ function buildArchitecture(world: World) {
     });
     we.addComponent(PhysicsBody, { state: PhysicsState.Static });
     we.addComponent(LocomotionEnvironment);
+    sceneSkyRefs.wallColliders.push({ entity: we, mesh: wallMesh, homePos: pos });
   };
+
+  sceneSkyRefs.floorMesh = floorMesh;
+  sceneSkyRefs.wallColliders.length = 0;
 
   addOakWall([W, H, t], [0, H / 2, -D / 2 - t / 2], true, 1);  // Far wall (-Z)
   addOakWall([W, H, t], [0, H / 2, D / 2 + t / 2], true, -1);  // Back wall (+Z)
@@ -1210,9 +1220,10 @@ function buildArchitecture(world: World) {
   addOakWall([t, H, D], [W / 2 + t / 2, H / 2, 0], false, -1); // Right wall (+X)
 
   // Invisible high physics ceiling collider above the arch peak to keep high throws in bounds
+  const ceilHomePos: [number, number, number] = [0, ARCH_PEAK_HEIGHT + 0.35, 0];
   const ceilColliderMesh = new Mesh(new BoxGeometry(W, t, D), oakTrimMat);
   ceilColliderMesh.visible = false;
-  ceilColliderMesh.position.set(0, ARCH_PEAK_HEIGHT + 0.35, 0);
+  ceilColliderMesh.position.set(...ceilHomePos);
   const ceilCollider = world.createTransformEntity(ceilColliderMesh);
   ceilCollider.addComponent(PhysicsShape, {
     shape: PhysicsShapeType.Box,
@@ -1221,11 +1232,16 @@ function buildArchitecture(world: World) {
     restitution: 0.3,
   });
   ceilCollider.addComponent(PhysicsBody, { state: PhysicsState.Static });
+  sceneSkyRefs.ceilCollider = { entity: ceilCollider, homePos: ceilHomePos };
 
   // 3. Great-Room Arched Ceiling with 2 Ceiling Windows (Skylights)
   // Window 1 spans z in [-2.05, -0.45], x in [-1.5, 1.5]
   // Window 2 spans z in [+0.45, +2.05], x in [-1.5, 1.5]
   const archRoot = new Mesh(new BoxGeometry(0.01, 0.01, 0.01), oakTrimMat);
+  const indoorArchGroup = new Group();
+  archRoot.add(indoorArchGroup);
+  sceneSkyRefs.indoorArchGroup = indoorArchGroup;
+
   const glassMat = new MeshStandardMaterial({
     color: new Color(0x9ad4ff),
     roughness: 0.1,
@@ -1259,7 +1275,7 @@ function buildArchitecture(world: World) {
     panelMesh.rotation.z = angle;
     panelMesh.castShadow = false;
     panelMesh.receiveShadow = !isWindow;
-    archRoot.add(panelMesh);
+    indoorArchGroup.add(panelMesh);
   };
 
   for (let s = 0; s < strips; s++) {
@@ -1299,7 +1315,7 @@ function buildArchitecture(world: World) {
       ribSeg.position.set(cx, cy, rz);
       ribSeg.rotation.z = angle;
       ribSeg.castShadow = false;
-      archRoot.add(ribSeg);
+      indoorArchGroup.add(ribSeg);
     }
   });
 
@@ -1310,7 +1326,7 @@ function buildArchitecture(world: World) {
   );
   ridgeBeam.position.set(0, ARCH_PEAK_HEIGHT - 0.05, 0);
   ridgeBeam.castShadow = false;
-  archRoot.add(ridgeBeam);
+  indoorArchGroup.add(ridgeBeam);
 
   [-1.5, 1.5].forEach((wx) => {
     const wy = archHeightAtX(wx) - 0.04;
@@ -1319,7 +1335,7 @@ function buildArchitecture(world: World) {
     purlin.position.set(wx, wy, 0);
     purlin.rotation.z = angle;
     purlin.castShadow = false;
-    archRoot.add(purlin);
+    indoorArchGroup.add(purlin);
   });
 
   // Bright Daytime Sky Canopy high above the 2 ceiling windows
@@ -1328,12 +1344,14 @@ function buildArchitecture(world: World) {
     emissive: new Color(0x4aa3f0),
     emissiveIntensity: 0.75,
     roughness: 1.0,
+    side: DoubleSide,
   });
   const skyCanopy = new Mesh(new BoxGeometry(18, 0.08, 12), skyCanopyMat);
   skyCanopy.position.set(0, 6.7, 0);
   skyCanopy.castShadow = false;
   skyCanopy.receiveShadow = false;
   archRoot.add(skyCanopy);
+  sceneSkyRefs.skyCanopy = skyCanopy;
 
   // Nighttime Moon & Starfield canopy just below the sky canopy (visible through skylights at night)
   const nightSkyGroup = new Group();
@@ -1432,6 +1450,43 @@ function buildArchitecture(world: World) {
       phase: idx * 1.3,
     });
   });
+
+  // 5. Gorilla Tag Map (Giant Stump centered at (0,0,0) with Forest, Gazebo, Treehouse, Canyon & Crystal Cave)
+  const gorillaTagMapGroup = new Group();
+  gorillaTagMapGroup.name = 'gorilla-tag-map-root';
+  gorillaTagMapGroup.visible = false; // Visible when Monke Mode is enabled
+
+  const mapGltf = AssetManager.getGLTF('gorillaTagMap');
+  if (mapGltf?.scene) {
+    mapGltf.scene.traverse((child: Object3D) => {
+      if ((child as Mesh).isMesh) {
+        const m = child as Mesh;
+        m.castShadow = true;
+        m.receiveShadow = true;
+        m.frustumCulled = false;
+        m.raycast = () => {};
+        const matStd = (Array.isArray(m.material) ? m.material[0] : m.material) as MeshStandardMaterial;
+        if (matStd) {
+          matStd.side = DoubleSide;
+          if (matStd.map) {
+            matStd.map.colorSpace = SRGBColorSpace;
+            matStd.map.needsUpdate = true;
+          }
+          matStd.needsUpdate = true;
+        }
+      }
+    });
+    gorillaTagMapGroup.add(mapGltf.scene);
+    buildGorillaMapSpatialGrid(mapGltf.scene);
+  }
+
+  // Warm ambient point light inside the Giant Stump so all objects inside the stump are well-lit
+  const stumpInteriorLight = new PointLight(0xfff1d6, 1.45, 11.5, 1.2);
+  stumpInteriorLight.position.set(0, 2.75, 0);
+  gorillaTagMapGroup.add(stumpInteriorLight);
+
+  world.createTransformEntity(gorillaTagMapGroup);
+  sceneSkyRefs.gorillaTagMapGroup = gorillaTagMapGroup;
 }
 
 /** Gently drifts the 3D clouds across the sky above the arched ceiling windows. */
@@ -1932,8 +1987,11 @@ function buildFiveToyStations(world: World) {
   // STATION 1: Arcade Basketball Hoop + Basketball & LED Scoreboard (Left Wall)
   // ==========================================================================
   const bbZ = HOOP_RIM_POS.z;
-  // Backboard mounted on left wall (-X, facing +X)
+  // Backboard mounted on left wall (-X, facing +X) + floor support post for Giant Stump
   staticBox(world, [0.04, 0.78, 1.1], [-2.86, 2.12, bbZ], 0xf4f6f8);
+  const hoopPost = new Mesh(new CylinderGeometry(0.048, 0.058, 2.12, 16), mat(0x2b303a, 0.5));
+  hoopPost.position.set(-2.9, 1.06, bbZ);
+  world.createTransformEntity(hoopPost);
   // Red shooter's square on backboard
   const shooterBox = new Mesh(
     new BoxGeometry(0.01, 0.28, 0.38),
@@ -2791,13 +2849,300 @@ const sceneSkyRefs: {
   glassMat: MeshStandardMaterial | null;
   nightSkyGroup: Group | null;
   indoorNightLight: PointLight | null;
+  floorMesh: Mesh | null;
+  indoorArchGroup: Group | null;
+  skyCanopy: Mesh | null;
+  wallColliders: Array<{
+    entity: Entity;
+    mesh: Mesh;
+    homePos: [number, number, number];
+  }>;
+  ceilCollider: {
+    entity: Entity;
+    homePos: [number, number, number];
+  } | null;
+  gorillaTagMapGroup: Group | null;
 } = {
   skyCanopyMat: null,
   cloudMat: null,
   glassMat: null,
   nightSkyGroup: null,
   indoorNightLight: null,
+  floorMesh: null,
+  indoorArchGroup: null,
+  skyCanopy: null,
+  wallColliders: [],
+  ceilCollider: null,
+  gorillaTagMapGroup: null,
 };
+
+// ---- Gorilla Tag Map Fast Spatial Triangle Grid (Zero-Allocation Queries) --
+const GORILLA_GRID_CELL = 2.5;
+const gorillaMapGrid = new Map<number, number[]>();
+
+function gorillaGridKey(gx: number, gz: number): number {
+  return (gx + 1024) * 2048 + (gz + 1024);
+}
+
+function buildGorillaMapSpatialGrid(mapScene: Object3D) {
+  gorillaMapGrid.clear();
+  mapScene.traverse((obj: Object3D) => {
+    const mesh = obj as Mesh;
+    if (!mesh.isMesh || !mesh.geometry) return;
+    const matObj = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
+    const matName = matObj?.name ?? '';
+    // Skip decorative leaf clusters & small cosmetic props so collision only uses solid terrain/structures
+    if (
+      matName.includes('leaves') ||
+      matName.includes('clay') ||
+      matName.includes('pillow') ||
+      matName.includes('metalpattern')
+    ) {
+      return;
+    }
+
+    const pos = mesh.geometry.attributes.position;
+    const idx = mesh.geometry.index;
+    const count = idx ? idx.count : pos.count;
+
+    for (let i = 0; i < count; i += 3) {
+      const a = idx ? idx.getX(i) : i;
+      const b = idx ? idx.getX(i + 1) : i + 1;
+      const c = idx ? idx.getX(i + 2) : i + 2;
+
+      const ax = pos.getX(a);
+      const ay = pos.getY(a);
+      const az = pos.getZ(a);
+      const bx = pos.getX(b);
+      const by = pos.getY(b);
+      const bz = pos.getZ(b);
+      const cx = pos.getX(c);
+      const cy = pos.getY(c);
+      const cz = pos.getZ(c);
+
+      const abx = bx - ax;
+      const aby = by - ay;
+      const abz = bz - az;
+      const acx = cx - ax;
+      const acy = cy - ay;
+      const acz = cz - az;
+      const nx = aby * acz - abz * acy;
+      const ny = abz * acx - abx * acz;
+      const nz = abx * acy - aby * acx;
+      const lenSq = nx * nx + ny * ny + nz * nz;
+      if (lenSq < 0.0004) continue;
+      const invLen = 1 / Math.sqrt(lenSq);
+      const unitNx = nx * invLen;
+      const unitNy = ny * invLen;
+      const unitNz = nz * invLen;
+
+      const minCx = Math.floor(Math.min(ax, bx, cx) / GORILLA_GRID_CELL);
+      const maxCx = Math.floor(Math.max(ax, bx, cx) / GORILLA_GRID_CELL);
+      const minCz = Math.floor(Math.min(az, bz, cz) / GORILLA_GRID_CELL);
+      const maxCz = Math.floor(Math.max(az, bz, cz) / GORILLA_GRID_CELL);
+
+      for (let gx = minCx; gx <= maxCx; gx++) {
+        for (let gz = minCz; gz <= maxCz; gz++) {
+          const key = gorillaGridKey(gx, gz);
+          let list = gorillaMapGrid.get(key);
+          if (!list) {
+            list = [];
+            gorillaMapGrid.set(key, list);
+          }
+          list.push(ax, ay, az, bx, by, bz, cx, cy, cz, unitNx, unitNy, unitNz);
+        }
+      }
+    }
+  });
+}
+
+/**
+ * Samples the Gorilla Tag map floor/ramp/branch height (`out[0]`) and ceiling height (`out[1]`)
+ * at `(px, pz)` relative to the player's current `footY`, with zero allocations.
+ */
+function sampleGorillaMapVertical(
+  px: number,
+  footY: number,
+  pz: number,
+  out: [number, number],
+) {
+  const gx = Math.floor(px / GORILLA_GRID_CELL);
+  const gz = Math.floor(pz / GORILLA_GRID_CELL);
+  const list = gorillaMapGrid.get(gorillaGridKey(gx, gz));
+
+  let bestGroundY = -Infinity;
+  let bestCeilingY = Infinity;
+
+  if (list) {
+    for (let i = 0; i < list.length; i += 12) {
+      const absNy = Math.abs(list[i + 10]);
+      if (absNy < 0.35) continue;
+
+      const ax = list[i];
+      const ay = list[i + 1];
+      const az = list[i + 2];
+      const bx = list[i + 3];
+      const by = list[i + 4];
+      const bz = list[i + 5];
+      const cx = list[i + 6];
+      const cy = list[i + 7];
+      const cz = list[i + 8];
+
+      const v0x = cx - ax;
+      const v0z = cz - az;
+      const v1x = bx - ax;
+      const v1z = bz - az;
+      const v2x = px - ax;
+      const v2z = pz - az;
+
+      const dot00 = v0x * v0x + v0z * v0z;
+      const dot01 = v0x * v1x + v0z * v1z;
+      const dot02 = v0x * v2x + v0z * v2z;
+      const dot11 = v1x * v1x + v1z * v1z;
+      const dot12 = v1x * v2x + v1z * v2z;
+
+      const denom = dot00 * dot11 - dot01 * dot01;
+      if (Math.abs(denom) < 1e-8) continue;
+
+      const invDenom = 1 / denom;
+      const u = (dot11 * dot02 - dot01 * dot12) * invDenom;
+      const v = (dot00 * dot12 - dot01 * dot02) * invDenom;
+
+      if (u >= -0.03 && v >= -0.03 && u + v <= 1.03) {
+        const triY = ay + u * (cy - ay) + v * (by - ay);
+        if (triY <= footY + 0.95 && triY > bestGroundY) {
+          bestGroundY = triY;
+        }
+        if (triY >= footY + 1.35 && triY < bestCeilingY) {
+          bestCeilingY = triY;
+        }
+      }
+    }
+  }
+
+  // Inside the Giant Stump's main chamber around (0, 0, 0), keep the floor crisp at y = 0
+  if (px * px + pz * pz < 13.0 && Math.abs(bestGroundY) < 0.12) {
+    bestGroundY = 0;
+  }
+
+  out[0] = bestGroundY;
+  out[1] = bestCeilingY;
+}
+
+/**
+ * Checks whether a hand at `(hx, hy, hz)` is within `radius` meters of any surface
+ * on the Gorilla Tag map (stump walls, ramp, tree trunks, branches, rocks, caves).
+ */
+function isHandTouchingGorillaMap(
+  hx: number,
+  hy: number,
+  hz: number,
+  radius: number,
+): boolean {
+  const gx = Math.floor(hx / GORILLA_GRID_CELL);
+  const gz = Math.floor(hz / GORILLA_GRID_CELL);
+  const list = gorillaMapGrid.get(gorillaGridKey(gx, gz));
+  if (!list) return false;
+
+  for (let i = 0; i < list.length; i += 12) {
+    const ax = list[i];
+    const ay = list[i + 1];
+    const az = list[i + 2];
+    const bx = list[i + 3];
+    const by = list[i + 4];
+    const bz = list[i + 5];
+    const cx = list[i + 6];
+    const cy = list[i + 7];
+    const cz = list[i + 8];
+
+    if (
+      hy < Math.min(ay, by, cy) - radius ||
+      hy > Math.max(ay, by, cy) + radius ||
+      hx < Math.min(ax, bx, cx) - radius ||
+      hx > Math.max(ax, bx, cx) + radius ||
+      hz < Math.min(az, bz, cz) - radius ||
+      hz > Math.max(az, bz, cz) + radius
+    ) {
+      continue;
+    }
+
+    const nx = list[i + 9];
+    const ny = list[i + 10];
+    const nz = list[i + 11];
+    const planeDist = Math.abs((hx - ax) * nx + (hy - ay) * ny + (hz - az) * nz);
+    if (planeDist <= radius) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Prevents the player from walking horizontally through steep walls (like the Giant Stump wall
+ * or rock cliffs) while allowing smooth sliding along walls and walking out the Stump tunnel!
+ */
+function resolveGorillaMapWallPush(
+  px: number,
+  footY: number,
+  pz: number,
+  bodyRadius: number,
+  outXZ: [number, number],
+) {
+  let curX = px;
+  let curZ = pz;
+  const waistY = footY + 0.95;
+  const gx = Math.floor(curX / GORILLA_GRID_CELL);
+  const gz = Math.floor(curZ / GORILLA_GRID_CELL);
+  const list = gorillaMapGrid.get(gorillaGridKey(gx, gz));
+
+  if (list) {
+    for (let i = 0; i < list.length; i += 12) {
+      const absNy = Math.abs(list[i + 10]);
+      // Only push back against steep walls (not walkable floors/ramps)
+      if (absNy > 0.48) continue;
+
+      const ax = list[i];
+      const ay = list[i + 1];
+      const az = list[i + 2];
+      const bx = list[i + 3];
+      const by = list[i + 4];
+      const bz = list[i + 5];
+      const cx = list[i + 6];
+      const cy = list[i + 7];
+      const cz = list[i + 8];
+
+      if (
+        waistY < Math.min(ay, by, cy) - 0.15 ||
+        waistY > Math.max(ay, by, cy) + 0.15 ||
+        curX < Math.min(ax, bx, cx) - bodyRadius ||
+        curX > Math.max(ax, bx, cx) + bodyRadius ||
+        curZ < Math.min(az, bz, cz) - bodyRadius ||
+        curZ > Math.max(az, bz, cz) + bodyRadius
+      ) {
+        continue;
+      }
+
+      const nx = list[i + 9];
+      const nz = list[i + 11];
+      const nHorizLen = Math.hypot(nx, nz);
+      if (nHorizLen < 0.2) continue;
+      const hnx = nx / nHorizLen;
+      const hnz = nz / nHorizLen;
+
+      const signedDist = (curX - ax) * hnx + (curZ - az) * hnz;
+      if (Math.abs(signedDist) < bodyRadius) {
+        // Push away from the wall toward the side the player is on
+        const side = signedDist >= 0 ? 1 : -1;
+        const push = bodyRadius - Math.abs(signedDist);
+        curX += hnx * side * push;
+        curZ += hnz * side * push;
+      }
+    }
+  }
+
+  outXZ[0] = curX;
+  outXZ[1] = curZ;
+}
 
 const SETTINGS_BUTTON_LAYOUT: Array<{
   action: number;
@@ -2860,7 +3205,7 @@ const SETTINGS_BUTTON_LAYOUT: Array<{
     offset: [0.175, -0.205, 0.022],
     size: [0.31, 0.14, 0.022],
     label: 'MONKE MODE',
-    sublabel: 'No Torso/Legs • Move w/ Hands',
+    sublabel: 'Giant Stump Spawn • Move w/ Hands',
     accentColor: 0xf59e0b,
   },
 ];
@@ -3356,6 +3701,10 @@ export class SettingsAndHandsSystem extends createSystem({
   private handDelta = new Vector3();
   private hasHandPrev = [false, false];
   private monkeVel = new Vector3();
+  private mapVertSample: [number, number] = [0, 3.3];
+  private mapWallSample: [number, number] = [0, 0];
+  private wallTeleportPos = new Vector3();
+  private wallTeleportQuat = new Quaternion();
 
   private dirLight: DirectionalLight | null = null;
   private hemiLight: HemisphereLight | null = null;
@@ -3445,6 +3794,58 @@ export class SettingsAndHandsSystem extends createSystem({
       this.playerBodyRoot.visible = !enabled;
     }
 
+    // Show the Gorilla Tag Map (Giant Stump at (0,0,0) + Forest, Gazebo, Treehouse, Canyon, Caves)
+    // and hide the indoor oak room's tiled floor, oak walls, and arched oak ceiling in Monke Mode
+    if (sceneSkyRefs.gorillaTagMapGroup) {
+      sceneSkyRefs.gorillaTagMapGroup.visible = enabled;
+    }
+    if (sceneSkyRefs.floorMesh) {
+      sceneSkyRefs.floorMesh.visible = !enabled;
+    }
+    if (sceneSkyRefs.indoorArchGroup) {
+      sceneSkyRefs.indoorArchGroup.visible = !enabled;
+    }
+    if (sceneSkyRefs.skyCanopy) {
+      if (enabled) {
+        sceneSkyRefs.skyCanopy.scale.set(22, 1, 28);
+        sceneSkyRefs.skyCanopy.position.set(0, 72, 0);
+      } else {
+        sceneSkyRefs.skyCanopy.scale.set(1, 1, 1);
+        sceneSkyRefs.skyCanopy.position.set(0, 6.7, 0);
+      }
+    }
+
+    // Move the 4 indoor oak wall static physics colliders & ceiling collider out of the way in Monke Mode
+    // so the player and balls aren't blocked inside the Giant Stump or when exiting the Stump tunnel
+    const physics = this.world.getSystem(PhysicsSystem);
+    this.wallTeleportQuat.identity();
+    for (const wall of sceneSkyRefs.wallColliders) {
+      wall.mesh.visible = !enabled;
+      this.wallTeleportPos.set(
+        wall.homePos[0],
+        enabled ? -60 : wall.homePos[1],
+        wall.homePos[2],
+      );
+      wall.mesh.position.copy(this.wallTeleportPos);
+      physics?.setBodyTransform(wall.entity, {
+        position: this.wallTeleportPos,
+        quaternion: this.wallTeleportQuat,
+      });
+    }
+    if (sceneSkyRefs.ceilCollider) {
+      const c = sceneSkyRefs.ceilCollider;
+      this.wallTeleportPos.set(
+        c.homePos[0],
+        enabled ? -60 : c.homePos[1],
+        c.homePos[2],
+      );
+      c.entity.object3D?.position.copy(this.wallTeleportPos);
+      physics?.setBodyTransform(c.entity, {
+        position: this.wallTeleportPos,
+        quaternion: this.wallTeleportQuat,
+      });
+    }
+
     // Reset hand-locomotion tracking state
     this.hasHandPrev[0] = false;
     this.hasHandPrev[1] = false;
@@ -3456,8 +3857,27 @@ export class SettingsAndHandsSystem extends createSystem({
       locomotion.config.slidingSpeed.value = enabled ? 0.0001 : 3.0;
     }
 
-    if (!enabled) {
-      this.player.position.y = 0;
+    // Spawn the player at (0, 0, 0) inside the Giant Stump (with all room objects around them!)
+    this.player.position.set(0, 0, 0);
+    this.world.getSystem(ResetSystem)?.resetAll();
+
+    // If the floating Settings Menu is currently open, keep it positioned right in front of the player at the spawnpoint
+    for (const m of this.queries.menus.entities) {
+      if (m.getValue(SettingsMenu, 'open')) {
+        this.camera.getWorldPosition(this.headPos);
+        this.camera.getWorldDirection(this.headDir);
+        this.headDir.y = 0;
+        if (this.headDir.lengthSq() < 0.001) {
+          this.headDir.set(0, 0, -1);
+        } else {
+          this.headDir.normalize();
+        }
+        this.menuPos.copy(this.headPos).addScaledVector(this.headDir, 1.05);
+        this.menuPos.y = Math.max(1.15, Math.min(1.65, this.headPos.y - 0.05));
+        const yaw = Math.atan2(-this.headDir.x, -this.headDir.z);
+        this.menuQuat.setFromAxisAngle(this.upAxis, yaw);
+        this.syncMenuTransforms(m, true);
+      }
     }
   }
 
@@ -3681,16 +4101,15 @@ export class SettingsAndHandsSystem extends createSystem({
             const hy = this.handWorldPos.y;
             const hz = this.handWorldPos.z;
 
-            // Check if hand is touching floor, table, or walls (classic Gorilla Tag surface push)
-            const nearFloor = hy <= 0.34;
+            // Check if hand is touching the Giant Stump floor, table, or any Gorilla Tag map wall/ramp/branch/tree
+            const nearFloor = hy <= this.player.position.y + 0.38;
             const nearTable =
               Math.abs(hx) <= TABLE.width / 2 + 0.16 &&
               Math.abs(hz - TABLE.z) <= TABLE.depth / 2 + 0.16 &&
+              hy >= 0 &&
               hy <= TABLE.height + 0.24;
-            const nearWall =
-              Math.abs(hx) >= ROOM.width / 2 - 0.36 ||
-              Math.abs(hz) >= ROOM.depth / 2 - 0.36;
-            const touchingSurface = nearFloor || nearTable || nearWall;
+            const nearMapSurface = isHandTouchingGorillaMap(hx, hy, hz, 0.42);
+            const touchingSurface = nearFloor || nearTable || nearMapSurface;
 
             // Also allow air-pushing by holding Grip/Trigger/Pinch OR swinging arms downward/backward
             const isGripping = squeezeVal > 0.35;
@@ -3701,7 +4120,7 @@ export class SettingsAndHandsSystem extends createSystem({
                   this.handDelta.y <= 0.004));
 
             if (touchingSurface || isGripping || isArmSwingStroke) {
-              const pushGain = touchingSurface ? 1.55 : isGripping ? 1.45 : 1.25;
+              const pushGain = touchingSurface ? 1.6 : isGripping ? 1.48 : 1.28;
               const px = -this.handDelta.x * pushGain;
               const py = Math.max(-0.04, -this.handDelta.y * pushGain);
               const pz = -this.handDelta.z * pushGain;
@@ -3717,7 +4136,7 @@ export class SettingsAndHandsSystem extends createSystem({
               this.monkeVel.x = this.monkeVel.x * 0.45 + vx * 0.65;
               this.monkeVel.z = this.monkeVel.z * 0.45 + vz * 0.65;
               if (vy > 0.35) {
-                this.monkeVel.y = Math.min(4.2, Math.max(this.monkeVel.y, vy * 0.72));
+                this.monkeVel.y = Math.min(4.8, Math.max(this.monkeVel.y, vy * 0.75));
               }
             }
           }
@@ -3730,36 +4149,81 @@ export class SettingsAndHandsSystem extends createSystem({
       }
     }
 
-    // Integrate Monke Mode momentum, gravity, and room bounds
+    // Integrate Monke Mode momentum, gravity, and Gorilla Tag map terrain/stump collision
     if (this.monkeMode) {
       this.player.position.x += this.monkeVel.x * dt;
       this.player.position.y += this.monkeVel.y * dt;
       this.player.position.z += this.monkeVel.z * dt;
 
-      // Determine floor height under player (can jump onto the center table too!)
-      const overTable =
-        Math.abs(this.headPos.x) < TABLE.width / 2 - 0.05 &&
-        Math.abs(this.headPos.z - TABLE.z) < TABLE.depth / 2 - 0.05 &&
-        this.player.position.y >= TABLE.height - 0.18;
-      const groundY = overTable ? TABLE.height : 0;
+      // Resolve horizontal wall collision against the Giant Stump walls, trees, rocks & canyon
+      const headOffsetX = this.headPos.x - this.player.position.x;
+      const headOffsetZ = this.headPos.z - this.player.position.z;
+      const bodyX = this.player.position.x + headOffsetX;
+      const bodyZ = this.player.position.z + headOffsetZ;
 
-      if (this.player.position.y > groundY) {
-        this.monkeVel.y -= 9.2 * dt;
-      } else {
-        this.player.position.y = groundY;
-        if (this.monkeVel.y < 0) this.monkeVel.y = 0;
+      resolveGorillaMapWallPush(
+        bodyX,
+        this.player.position.y,
+        bodyZ,
+        0.34,
+        this.mapWallSample,
+      );
+      this.player.position.x = this.mapWallSample[0] - headOffsetX;
+      this.player.position.z = this.mapWallSample[1] - headOffsetZ;
+
+      // Sample Gorilla Tag map ground/ramp/branch height & ceiling height under the player
+      sampleGorillaMapVertical(
+        this.mapWallSample[0],
+        this.player.position.y,
+        this.mapWallSample[1],
+        this.mapVertSample,
+      );
+      let groundY = this.mapVertSample[0];
+      const ceilingY = this.mapVertSample[1];
+
+      // Inside the Giant Stump, also allow jumping onto the center table!
+      const overTable =
+        Math.abs(this.mapWallSample[0]) < TABLE.width / 2 - 0.04 &&
+        Math.abs(this.mapWallSample[1] - TABLE.z) < TABLE.depth / 2 - 0.04 &&
+        this.player.position.y >= TABLE.height - 0.22 &&
+        this.player.position.y <= TABLE.height + 1.8;
+      if (overTable && TABLE.height > groundY) {
+        groundY = TABLE.height;
       }
 
-      const damping = Math.exp(-3.4 * dt);
+      if (groundY > -100) {
+        if (this.player.position.y > groundY) {
+          this.monkeVel.y -= 9.2 * dt;
+          if (this.player.position.y + this.monkeVel.y * dt <= groundY) {
+            this.player.position.y = groundY;
+            if (this.monkeVel.y < 0) this.monkeVel.y = 0;
+          }
+        } else {
+          this.player.position.y = groundY;
+          if (this.monkeVel.y < 0) this.monkeVel.y = 0;
+        }
+      } else {
+        this.monkeVel.y -= 9.2 * dt;
+      }
+
+      // Prevent head from clipping above a low ceiling (such as inside the Giant Stump or cave tunnels)
+      if (ceilingY < 1000) {
+        const maxFootY = ceilingY - 1.45;
+        if (this.player.position.y > maxFootY) {
+          this.player.position.y = Math.max(groundY > -100 ? groundY : -100, maxFootY);
+          if (this.monkeVel.y > 0) this.monkeVel.y = 0;
+        }
+      }
+
+      // Safety respawn inside the Giant Stump if the player ever falls below the map
+      if (this.player.position.y < -65) {
+        this.player.position.set(0, 0, 0);
+        this.monkeVel.set(0, 0, 0);
+      }
+
+      const damping = Math.exp(-3.2 * dt);
       this.monkeVel.x *= damping;
       this.monkeVel.z *= damping;
-
-      // Keep player inside the oak walls and below the arched ceiling
-      const maxX = ROOM.width / 2 - 0.32;
-      const maxZ = ROOM.depth / 2 - 0.32;
-      this.player.position.x = Math.max(-maxX, Math.min(maxX, this.player.position.x));
-      this.player.position.z = Math.max(-maxZ, Math.min(maxZ, this.player.position.z));
-      this.player.position.y = Math.min(1.85, this.player.position.y);
     }
 
     // 2. Update Player Torso & Legs Avatar in Normal Mode (hidden in Monke Mode)

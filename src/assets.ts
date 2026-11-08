@@ -41,4 +41,9 @@ export default defineAssets({
     type: AssetType.Texture,
     priority: 'critical',
   },
+  gorillaTagMap: {
+    url: '/gorilla-tag-map.glb',
+    type: AssetType.GLTF,
+    priority: 'critical',
+  },
 });
