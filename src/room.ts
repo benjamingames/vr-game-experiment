@@ -12,6 +12,7 @@ import {
   HemisphereLight,
   InputComponent,
   LocomotionEnvironment,
+  LocomotionSystem,
   Matrix4,
   Mesh,
   MeshStandardMaterial,
@@ -2808,7 +2809,7 @@ const SETTINGS_BUTTON_LAYOUT: Array<{
 }> = [
   {
     action: 0,
-    offset: [0.325, 0.21, 0.02],
+    offset: [0.325, 0.275, 0.02],
     size: [0.068, 0.058, 0.018],
     label: 'X',
     sublabel: 'CLOSE',
@@ -2816,35 +2817,51 @@ const SETTINGS_BUTTON_LAYOUT: Array<{
   },
   {
     action: 1,
-    offset: [-0.175, 0.045, 0.022],
-    size: [0.31, 0.145, 0.022],
+    offset: [-0.175, 0.125, 0.022],
+    size: [0.31, 0.135, 0.022],
     label: 'DAYTIME',
     sublabel: 'Sunny Blue Sky',
     accentColor: 0x38bdf8,
   },
   {
     action: 2,
-    offset: [0.175, 0.045, 0.022],
-    size: [0.31, 0.145, 0.022],
+    offset: [0.175, 0.125, 0.022],
+    size: [0.31, 0.135, 0.022],
     label: 'NIGHTTIME',
     sublabel: 'Moon & Starry Sky',
     accentColor: 0x818cf8,
   },
   {
     action: 3,
-    offset: [-0.175, -0.145, 0.022],
-    size: [0.31, 0.165, 0.022],
+    offset: [-0.175, -0.04, 0.022],
+    size: [0.31, 0.145, 0.022],
     label: 'GIRL HANDS',
     sublabel: 'Light / Slender Hands',
     accentColor: 0xf472b6,
   },
   {
     action: 4,
-    offset: [0.175, -0.145, 0.022],
-    size: [0.31, 0.165, 0.022],
+    offset: [0.175, -0.04, 0.022],
+    size: [0.31, 0.145, 0.022],
     label: 'BOY HANDS',
     sublabel: 'Dark / Broad Hands',
     accentColor: 0x22c55e,
+  },
+  {
+    action: 5,
+    offset: [-0.175, -0.205, 0.022],
+    size: [0.31, 0.14, 0.022],
+    label: 'NORMAL BODY',
+    sublabel: 'Torso & Legs + Stick Walk',
+    accentColor: 0x06b6d4,
+  },
+  {
+    action: 6,
+    offset: [0.175, -0.205, 0.022],
+    size: [0.31, 0.14, 0.022],
+    label: 'MONKE MODE',
+    sublabel: 'No Torso/Legs • Move w/ Hands',
+    accentColor: 0xf59e0b,
   },
 ];
 
@@ -3039,7 +3056,7 @@ function buildSettingsMenuAndLauncher(world: World, tableTop: number) {
 
   // 2. Floating 3D VR Settings Menu Panel (starts closed below floor; 3-lines button toggles it in front of player)
   const panelW = 0.78;
-  const panelH = 0.52;
+  const panelH = 0.66;
   const panelD = 0.024;
   const panelRoot = new Mesh(
     new BoxGeometry(panelW, panelH, panelD),
@@ -3076,14 +3093,14 @@ function buildSettingsMenuAndLauncher(world: World, tableTop: number) {
       roughness: 0.35,
     }),
   );
-  headerBanner.position.set(-0.04, 0.205, panelD / 2 + 0.004);
+  headerBanner.position.set(-0.04, 0.27, panelD / 2 + 0.004);
   headerBanner.raycast = () => {};
   panelRoot.add(headerBanner);
 
   const menuEntity = world.createTransformEntity(panelRoot);
   menuEntity.addComponent(SettingsMenu, { open: false });
 
-  // 3. Interactive Option Buttons (Close, Daytime, Nighttime, Girl Hands, Boy Hands)
+  // 3. Interactive Option Buttons (Close, Daytime, Nighttime, Girl Hands, Boy Hands, Normal Body, Monke Mode)
   for (const cfg of SETTINGS_BUTTON_LAYOUT) {
     const [bw, bh, bd] = cfg.size;
     const isClose = cfg.action === 0;
@@ -3101,7 +3118,7 @@ function buildSettingsMenuAndLauncher(world: World, tableTop: number) {
               cfg.label,
               cfg.sublabel,
               '#' + cfg.accentColor.toString(16).padStart(6, '0'),
-              cfg.action === 1 || cfg.action === 3,
+              cfg.action === 1 || cfg.action === 3 || cfg.action === 5,
             ),
             roughness: 0.3,
           }),
@@ -3152,12 +3169,146 @@ function buildSettingsMenuAndLauncher(world: World, tableTop: number) {
       miniRight.position.set(0.115, 0.028, bd / 2 + 0.018);
       miniRight.rotation.set(-Math.PI / 2, 0, 0);
       btnMesh.add(miniRight);
+    } else if (cfg.action === 5) {
+      // Miniature Torso & Legs icon on Normal Body button
+      const miniTorso = new Mesh(
+        new BoxGeometry(0.024, 0.026, 0.012),
+        mat(0x0ea5e9, 0.4),
+      );
+      miniTorso.position.set(-0.115, 0.04, bd / 2 + 0.01);
+      miniTorso.raycast = () => {};
+      btnMesh.add(miniTorso);
+      [-0.006, 0.006].forEach((lx) => {
+        const miniLeg = new Mesh(
+          new BoxGeometry(0.009, 0.022, 0.01),
+          mat(0x1e3a8a, 0.5),
+        );
+        miniLeg.position.set(lx, -0.022, 0);
+        miniLeg.raycast = () => {};
+        miniTorso.add(miniLeg);
+      });
+    } else if (cfg.action === 6) {
+      // Miniature Monke head & floating hands icon on Monke Mode button
+      const monkeIcon = new Mesh(
+        new SphereGeometry(0.018, 14, 12),
+        mat(0x854d0e, 0.55),
+      );
+      monkeIcon.position.set(-0.115, 0.036, bd / 2 + 0.012);
+      monkeIcon.raycast = () => {};
+      const muzzle = new Mesh(
+        new SphereGeometry(0.012, 12, 10),
+        mat(0xfde68a, 0.5),
+      );
+      muzzle.position.set(0, -0.004, 0.012);
+      muzzle.raycast = () => {};
+      monkeIcon.add(muzzle);
+      btnMesh.add(monkeIcon);
     }
 
     const be = world.createTransformEntity(btnMesh);
     be.addComponent(RayInteractable);
     be.addComponent(SettingsButton, { action: cfg.action });
   }
+}
+
+/**
+ * Builds the player's visible 3D Torso & Legs avatar (visible when looking down in Normal Mode,
+ * and hidden completely when Monke Mode is active).
+ */
+function createPlayerBodyAvatar(): {
+  root: Group;
+  leftLegPivot: Group;
+  rightLegPivot: Group;
+} {
+  const root = new Group();
+  root.name = 'player-torso-and-legs';
+
+  const shirtMat = new MeshStandardMaterial({
+    color: new Color(0x0284c7),
+    roughness: 0.65,
+  });
+  const trimMat = new MeshStandardMaterial({
+    color: new Color(0xe2e8f0),
+    roughness: 0.5,
+  });
+  const beltMat = new MeshStandardMaterial({
+    color: new Color(0x1e293b),
+    roughness: 0.4,
+    metalness: 0.3,
+  });
+  const pantsMat = new MeshStandardMaterial({
+    color: new Color(0x1e3a8a),
+    roughness: 0.75,
+  });
+  const shoeMat = new MeshStandardMaterial({
+    color: new Color(0xdc2626),
+    roughness: 0.45,
+  });
+
+  // Upper & lower torso (positioned slightly behind the camera plane so it doesn't clip near-plane,
+  // but clearly visible when looking down at your chest/waist/legs!)
+  const torsoGroup = new Group();
+  torsoGroup.position.set(0, 0.78, 0.06);
+  root.add(torsoGroup);
+
+  const chest = new Mesh(new BoxGeometry(0.34, 0.44, 0.2), shirtMat);
+  chest.position.set(0, 0.22, 0);
+  chest.castShadow = true;
+  chest.frustumCulled = false;
+  chest.raycast = () => {};
+  torsoGroup.add(chest);
+
+  // Center hoodie stripe on chest
+  const stripe = new Mesh(new BoxGeometry(0.04, 0.42, 0.206), trimMat);
+  stripe.position.set(0, 0.22, 0);
+  stripe.frustumCulled = false;
+  stripe.raycast = () => {};
+  torsoGroup.add(stripe);
+
+  // Waist belt
+  const belt = new Mesh(new BoxGeometry(0.35, 0.055, 0.21), beltMat);
+  belt.position.set(0, 0.0, 0);
+  belt.frustumCulled = false;
+  belt.raycast = () => {};
+  torsoGroup.add(belt);
+
+  const buildLeg = (side: -1 | 1): Group => {
+    const legPivot = new Group();
+    legPivot.position.set(side * 0.105, 0.75, 0.06);
+
+    // Thigh + shin
+    const upperLeg = new Mesh(
+      new CylinderGeometry(0.068, 0.056, 0.68, 16),
+      pantsMat,
+    );
+    upperLeg.position.set(0, -0.34, 0);
+    upperLeg.castShadow = true;
+    upperLeg.frustumCulled = false;
+    upperLeg.raycast = () => {};
+    legPivot.add(upperLeg);
+
+    // Sneaker shoe at the bottom of the leg (extending forward along -Z)
+    const shoe = new Mesh(new BoxGeometry(0.115, 0.075, 0.23), shoeMat);
+    shoe.position.set(0, -0.7, -0.045);
+    shoe.castShadow = true;
+    shoe.frustumCulled = false;
+    shoe.raycast = () => {};
+    legPivot.add(shoe);
+
+    const sole = new Mesh(new BoxGeometry(0.122, 0.024, 0.24), trimMat);
+    sole.position.set(0, -0.73, -0.045);
+    sole.frustumCulled = false;
+    sole.raycast = () => {};
+    legPivot.add(sole);
+
+    root.add(legPivot);
+    return legPivot;
+  };
+
+  const leftLegPivot = buildLeg(-1);
+  const rightLegPivot = buildLeg(1);
+
+  return { root, leftLegPivot, rightLegPivot };
 }
 
 /**
@@ -3168,17 +3319,21 @@ function buildSettingsMenuAndLauncher(world: World, tableTop: number) {
  * 2. Toggling the VR Settings Menu when pressing the 3-lines button on the left
  *    controller (`InputComponent.Menu` / button 7, or X/Y fallback, or `M` key on
  *    desktop, or clicking the physical 3-lines button on the table).
- * 3. Switching between Daytime and Nighttime lighting/sky/clouds, and between
- *    Girl Hand-Tracking Hands and Boy Hand-Tracking Hands.
+ * 3. Switching between Daytime and Nighttime lighting/sky/clouds, between
+ *    Girl Hand-Tracking Hands and Boy Hand-Tracking Hands, and toggling MONKE MODE
+ *    (where your torso and legs disappear and you move & launch yourself using your hands!).
  */
 export class SettingsAndHandsSystem extends createSystem({
   menus: { required: [SettingsMenu] },
   buttons: { required: [SettingsButton] },
   pressedButtons: { required: [SettingsButton, Pressed] },
+  grabbed: { required: [Grabbed] },
 }) {
   private isNight = false;
   private handStyle: 'girl' | 'boy' = 'girl';
+  private monkeMode = false;
   private wasMKeyDown = false;
+  private wasGKeyDown = false;
 
   private leftHandRig = new Group();
   private rightHandRig = new Group();
@@ -3186,6 +3341,21 @@ export class SettingsAndHandsSystem extends createSystem({
   private girlRightHand: Group | null = null;
   private boyLeftHand: Group | null = null;
   private boyRightHand: Group | null = null;
+
+  // Player Torso & Legs avatar (visible in Normal Mode, disappears in Monke Mode)
+  private playerBodyRoot: Group | null = null;
+  private leftLegPivot: Group | null = null;
+  private rightLegPivot: Group | null = null;
+  private prevHeadWorldPos = new Vector3();
+  private walkPhase = 0;
+
+  // Monke Mode hand-locomotion state
+  private handWorldPos = new Vector3();
+  private handRelCurr = [new Vector3(), new Vector3()];
+  private handRelPrev = [new Vector3(), new Vector3()];
+  private handDelta = new Vector3();
+  private hasHandPrev = [false, false];
+  private monkeVel = new Vector3();
 
   private dirLight: DirectionalLight | null = null;
   private hemiLight: HemisphereLight | null = null;
@@ -3218,6 +3388,14 @@ export class SettingsAndHandsSystem extends createSystem({
     this.player.gripSpaces.left.add(this.leftHandRig);
     this.player.gripSpaces.right.add(this.rightHandRig);
 
+    // Build Player Torso & Legs avatar (visible in Normal Mode, disappears in Monke Mode)
+    const body = createPlayerBodyAvatar();
+    this.playerBodyRoot = body.root;
+    this.leftLegPivot = body.leftLegPivot;
+    this.rightLegPivot = body.rightLegPivot;
+    this.world.createTransformEntity(this.playerBodyRoot);
+    this.camera.getWorldPosition(this.prevHeadWorldPos);
+
     this.applyHandStyle('girl');
 
     this.cleanupFuncs.push(
@@ -3248,6 +3426,38 @@ export class SettingsAndHandsSystem extends createSystem({
       this.applyHandStyle('boy');
       this.refreshMenuButtonTextures();
       playSynthTone(392.0, 0.16, 'triangle', 523.25);
+    } else if (action === 5) {
+      this.applyMonkeMode(false);
+      this.refreshMenuButtonTextures();
+      playSynthTone(440, 0.16, 'sine', 587.33);
+    } else if (action === 6) {
+      this.applyMonkeMode(true);
+      this.refreshMenuButtonTextures();
+      // Fun playful monke audio chirp!
+      playSynthTone(320, 0.18, 'sawtooth', 640);
+    }
+  }
+
+  private applyMonkeMode(enabled: boolean) {
+    this.monkeMode = enabled;
+    // Hide torso and legs completely in Monke Mode; show them in Normal Mode
+    if (this.playerBodyRoot) {
+      this.playerBodyRoot.visible = !enabled;
+    }
+
+    // Reset hand-locomotion tracking state
+    this.hasHandPrev[0] = false;
+    this.hasHandPrev[1] = false;
+    this.monkeVel.set(0, 0, 0);
+
+    // Disable joystick sliding while in Monke Mode so movement is driven by your hands
+    const locomotion = this.world.getSystem(LocomotionSystem);
+    if (locomotion) {
+      locomotion.config.slidingSpeed.value = enabled ? 0.0001 : 3.0;
+    }
+
+    if (!enabled) {
+      this.player.position.y = 0;
     }
   }
 
@@ -3319,7 +3529,9 @@ export class SettingsAndHandsSystem extends createSystem({
         (action === 1 && !this.isNight) ||
         (action === 2 && this.isNight) ||
         (action === 3 && this.handStyle === 'girl') ||
-        (action === 4 && this.handStyle === 'boy');
+        (action === 4 && this.handStyle === 'boy') ||
+        (action === 5 && !this.monkeMode) ||
+        (action === 6 && this.monkeMode);
 
       const matStd = mesh.material as MeshStandardMaterial;
       if (matStd.map) {
@@ -3400,9 +3612,16 @@ export class SettingsAndHandsSystem extends createSystem({
     }
   }
 
-  update() {
+  update(delta: number) {
+    const dt = Math.min(Math.max(delta, 0.004), 0.05);
+    this.camera.getWorldPosition(this.headPos);
+    this.camera.getWorldDirection(this.headDir);
+
     // 1. Keep default XR visuals hidden so our custom Girl / Boy VR hands are the active hands
-    for (const side of ['left', 'right'] as const) {
+    const isHoldingObject = this.queries.grabbed.entities.size > 0;
+
+    for (let idx = 0; idx < 2; idx++) {
+      const side = idx === 0 ? 'left' : 'right';
       const handAdapter = this.input.visualAdapters.hand[side];
       const ctrlAdapter = this.input.visualAdapters.controller[side];
       if (handAdapter.visual) handAdapter.visual.model.visible = false;
@@ -3442,9 +3661,139 @@ export class SettingsAndHandsSystem extends createSystem({
       const scaleZ = 1 - squeezeVal * 0.1;
       const scaleY = 1 - squeezeVal * 0.06;
       rig.scale.set(1, scaleY, scaleZ);
+
+      // ---- MONKE MODE HAND LOCOMOTION ----
+      if (this.monkeMode) {
+        rig.getWorldPosition(this.handWorldPos);
+        // Track hand offset relative to player rig so moving player.position doesn't feed back
+        this.handRelCurr[idx]
+          .copy(this.handWorldPos)
+          .sub(this.player.position);
+
+        if (this.hasHandPrev[idx] && !isHoldingObject) {
+          this.handDelta
+            .copy(this.handRelCurr[idx])
+            .sub(this.handRelPrev[idx]);
+          const handMoveLen = this.handDelta.length();
+
+          if (handMoveLen > 0.0004 && handMoveLen < 0.45) {
+            const hx = this.handWorldPos.x;
+            const hy = this.handWorldPos.y;
+            const hz = this.handWorldPos.z;
+
+            // Check if hand is touching floor, table, or walls (classic Gorilla Tag surface push)
+            const nearFloor = hy <= 0.34;
+            const nearTable =
+              Math.abs(hx) <= TABLE.width / 2 + 0.16 &&
+              Math.abs(hz - TABLE.z) <= TABLE.depth / 2 + 0.16 &&
+              hy <= TABLE.height + 0.24;
+            const nearWall =
+              Math.abs(hx) >= ROOM.width / 2 - 0.36 ||
+              Math.abs(hz) >= ROOM.depth / 2 - 0.36;
+            const touchingSurface = nearFloor || nearTable || nearWall;
+
+            // Also allow air-pushing by holding Grip/Trigger/Pinch OR swinging arms downward/backward
+            const isGripping = squeezeVal > 0.35;
+            const isArmSwingStroke =
+              hy < this.headPos.y - 0.14 &&
+              (this.handDelta.y < -0.0025 ||
+                (Math.hypot(this.handDelta.x, this.handDelta.z) / dt > 0.42 &&
+                  this.handDelta.y <= 0.004));
+
+            if (touchingSurface || isGripping || isArmSwingStroke) {
+              const pushGain = touchingSurface ? 1.55 : isGripping ? 1.45 : 1.25;
+              const px = -this.handDelta.x * pushGain;
+              const py = Math.max(-0.04, -this.handDelta.y * pushGain);
+              const pz = -this.handDelta.z * pushGain;
+
+              this.player.position.x += px;
+              this.player.position.y += py;
+              this.player.position.z += pz;
+
+              // Impart launch momentum when pushing off with speed
+              const vx = px / dt;
+              const vy = py / dt;
+              const vz = pz / dt;
+              this.monkeVel.x = this.monkeVel.x * 0.45 + vx * 0.65;
+              this.monkeVel.z = this.monkeVel.z * 0.45 + vz * 0.65;
+              if (vy > 0.35) {
+                this.monkeVel.y = Math.min(4.2, Math.max(this.monkeVel.y, vy * 0.72));
+              }
+            }
+          }
+        }
+
+        this.handRelPrev[idx].copy(this.handRelCurr[idx]);
+        this.hasHandPrev[idx] = true;
+      } else {
+        this.hasHandPrev[idx] = false;
+      }
     }
 
-    // 2. Check 3-Lines Menu Button on left Quest controller (InputComponent.Menu / button 7, or X/Y fallback)
+    // Integrate Monke Mode momentum, gravity, and room bounds
+    if (this.monkeMode) {
+      this.player.position.x += this.monkeVel.x * dt;
+      this.player.position.y += this.monkeVel.y * dt;
+      this.player.position.z += this.monkeVel.z * dt;
+
+      // Determine floor height under player (can jump onto the center table too!)
+      const overTable =
+        Math.abs(this.headPos.x) < TABLE.width / 2 - 0.05 &&
+        Math.abs(this.headPos.z - TABLE.z) < TABLE.depth / 2 - 0.05 &&
+        this.player.position.y >= TABLE.height - 0.18;
+      const groundY = overTable ? TABLE.height : 0;
+
+      if (this.player.position.y > groundY) {
+        this.monkeVel.y -= 9.2 * dt;
+      } else {
+        this.player.position.y = groundY;
+        if (this.monkeVel.y < 0) this.monkeVel.y = 0;
+      }
+
+      const damping = Math.exp(-3.4 * dt);
+      this.monkeVel.x *= damping;
+      this.monkeVel.z *= damping;
+
+      // Keep player inside the oak walls and below the arched ceiling
+      const maxX = ROOM.width / 2 - 0.32;
+      const maxZ = ROOM.depth / 2 - 0.32;
+      this.player.position.x = Math.max(-maxX, Math.min(maxX, this.player.position.x));
+      this.player.position.z = Math.max(-maxZ, Math.min(maxZ, this.player.position.z));
+      this.player.position.y = Math.min(1.85, this.player.position.y);
+    }
+
+    // 2. Update Player Torso & Legs Avatar in Normal Mode (hidden in Monke Mode)
+    if (this.playerBodyRoot) {
+      this.playerBodyRoot.visible = !this.monkeMode;
+      if (!this.monkeMode) {
+        const bodyYaw = Math.atan2(-this.headDir.x, -this.headDir.z);
+        this.playerBodyRoot.position.set(
+          this.headPos.x,
+          this.player.position.y,
+          this.headPos.z,
+        );
+        this.playerBodyRoot.rotation.set(0, bodyYaw, 0);
+
+        // Animate walking leg swing based on horizontal head movement speed
+        const moveDist = Math.hypot(
+          this.headPos.x - this.prevHeadWorldPos.x,
+          this.headPos.z - this.prevHeadWorldPos.z,
+        );
+        const speed = moveDist / dt;
+        if (speed > 0.08) {
+          this.walkPhase += Math.min(speed, 3.5) * dt * 3.8;
+          const swing = Math.sin(this.walkPhase) * Math.min(speed * 0.22, 0.55);
+          if (this.leftLegPivot) this.leftLegPivot.rotation.x = swing;
+          if (this.rightLegPivot) this.rightLegPivot.rotation.x = -swing;
+        } else {
+          if (this.leftLegPivot) this.leftLegPivot.rotation.x *= 0.82;
+          if (this.rightLegPivot) this.rightLegPivot.rotation.x *= 0.82;
+        }
+      }
+    }
+    this.prevHeadWorldPos.copy(this.headPos);
+
+    // 3. Check 3-Lines Menu Button on left Quest controller (InputComponent.Menu / button 7, or X/Y fallback)
     const gpLeft = this.input.gamepads.left;
     if (
       gpLeft?.getButtonDown(InputComponent.Menu) ||
@@ -3456,13 +3805,21 @@ export class SettingsAndHandsSystem extends createSystem({
       playSynthTone(520, 0.12, 'sine', 660);
     }
 
-    // 3. Desktop keyboard shortcut 'M' to toggle the Settings Menu for easy browser testing
+    // 4. Desktop keyboard shortcuts: 'M' toggles Settings Menu, 'G' toggles Monke Mode
     const isMDown = Boolean(this.input.keyboard?.getKeyPressed('KeyM'));
     if (isMDown && !this.wasMKeyDown) {
       this.toggleMenu();
       playSynthTone(520, 0.12, 'sine', 660);
     }
     this.wasMKeyDown = isMDown;
+
+    const isGDown = Boolean(this.input.keyboard?.getKeyPressed('KeyG'));
+    if (isGDown && !this.wasGKeyDown) {
+      this.applyMonkeMode(!this.monkeMode);
+      this.refreshMenuButtonTextures();
+      playSynthTone(this.monkeMode ? 320 : 440, 0.18, 'sawtooth', this.monkeMode ? 640 : 587.33);
+    }
+    this.wasGKeyDown = isGDown;
   }
 }
 
