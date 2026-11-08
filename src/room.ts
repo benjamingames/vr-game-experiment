@@ -102,7 +102,6 @@ function staticBox(
     restitution: 0.3,
   });
   e.addComponent(PhysicsBody, { state: PhysicsState.Static });
-  e.addComponent(LocomotionEnvironment);
   return e;
 }
 
@@ -1211,6 +1210,7 @@ function buildArchitecture(world: World) {
     sceneSkyRefs.wallColliders.push({ entity: we, mesh: wallMesh, homePos: pos });
   };
 
+  sceneSkyRefs.floorEntity = floorEntity;
   sceneSkyRefs.floorMesh = floorMesh;
   sceneSkyRefs.wallColliders.length = 0;
 
@@ -1454,7 +1454,11 @@ function buildArchitecture(world: World) {
   // 5. Gorilla Tag Map (Giant Stump centered at (0,0,0) with Forest, Gazebo, Treehouse, Canyon & Crystal Cave)
   const gorillaTagMapGroup = new Group();
   gorillaTagMapGroup.name = 'gorilla-tag-map-root';
-  gorillaTagMapGroup.visible = false; // Visible when Monke Mode is enabled
+  gorillaTagMapGroup.visible = false; // Visible when Monke Map is enabled
+
+  const gorillaTagWalkableGroup = new Group();
+  gorillaTagWalkableGroup.name = 'gorilla-tag-walkable-env';
+  gorillaTagWalkableGroup.visible = false;
 
   const mapGltf = AssetManager.getGLTF('gorillaTagMap');
   if (mapGltf?.scene) {
@@ -1466,6 +1470,7 @@ function buildArchitecture(world: World) {
         m.frustumCulled = false;
         m.raycast = () => {};
         const matStd = (Array.isArray(m.material) ? m.material[0] : m.material) as MeshStandardMaterial;
+        const matName = matStd?.name ?? '';
         if (matStd) {
           matStd.side = DoubleSide;
           if (matStd.map) {
@@ -1473,6 +1478,19 @@ function buildArchitecture(world: World) {
             matStd.map.needsUpdate = true;
           }
           matStd.needsUpdate = true;
+        }
+        // Include solid terrain, Giant Stump walls, ramp, gazebo, treehouse, caves, and canyon
+        // in the LocomotionEnvironment collision group while skipping decorative leaf/clay/pillow/button props
+        if (
+          !matName.includes('leaves') &&
+          !matName.includes('clay') &&
+          !matName.includes('pillow') &&
+          !matName.includes('metalpattern') &&
+          !matName.includes('bush')
+        ) {
+          const walkProxy = new Mesh(m.geometry);
+          walkProxy.visible = false;
+          gorillaTagWalkableGroup.add(walkProxy);
         }
       }
     });
@@ -1486,7 +1504,9 @@ function buildArchitecture(world: World) {
   gorillaTagMapGroup.add(stumpInteriorLight);
 
   world.createTransformEntity(gorillaTagMapGroup);
+  const gorillaWalkEntity = world.createTransformEntity(gorillaTagWalkableGroup);
   sceneSkyRefs.gorillaTagMapGroup = gorillaTagMapGroup;
+  sceneSkyRefs.gorillaTagWalkableEntity = gorillaWalkEntity;
 }
 
 /** Gently drifts the 3D clouds across the sky above the arched ceiling windows. */
@@ -2849,6 +2869,7 @@ const sceneSkyRefs: {
   glassMat: MeshStandardMaterial | null;
   nightSkyGroup: Group | null;
   indoorNightLight: PointLight | null;
+  floorEntity: Entity | null;
   floorMesh: Mesh | null;
   indoorArchGroup: Group | null;
   skyCanopy: Mesh | null;
@@ -2862,18 +2883,21 @@ const sceneSkyRefs: {
     homePos: [number, number, number];
   } | null;
   gorillaTagMapGroup: Group | null;
+  gorillaTagWalkableEntity: Entity | null;
 } = {
   skyCanopyMat: null,
   cloudMat: null,
   glassMat: null,
   nightSkyGroup: null,
   indoorNightLight: null,
+  floorEntity: null,
   floorMesh: null,
   indoorArchGroup: null,
   skyCanopy: null,
   wallColliders: [],
   ceilCollider: null,
   gorillaTagMapGroup: null,
+  gorillaTagWalkableEntity: null,
 };
 
 // ---- Gorilla Tag Map Fast Spatial Triangle Grid (Zero-Allocation Queries) --
@@ -2896,7 +2920,8 @@ function buildGorillaMapSpatialGrid(mapScene: Object3D) {
       matName.includes('leaves') ||
       matName.includes('clay') ||
       matName.includes('pillow') ||
-      matName.includes('metalpattern')
+      matName.includes('metalpattern') ||
+      matName.includes('bush')
     ) {
       return;
     }
@@ -3077,9 +3102,34 @@ function isHandTouchingGorillaMap(
   return false;
 }
 
+function closestPointOnSegment2D(
+  px: number,
+  pz: number,
+  x1: number,
+  z1: number,
+  x2: number,
+  z2: number,
+  out: [number, number],
+): number {
+  const dx = x2 - x1;
+  const dz = z2 - z1;
+  const lenSq = dx * dx + dz * dz;
+  let t = 0;
+  if (lenSq > 1e-8) {
+    t = Math.max(0, Math.min(1, ((px - x1) * dx + (pz - z1) * dz) / lenSq));
+  }
+  const cx = x1 + t * dx;
+  const cz = z1 + t * dz;
+  out[0] = cx;
+  out[1] = cz;
+  return (px - cx) * (px - cx) + (pz - cz) * (pz - cz);
+}
+
+const tempSegPt: [number, number] = [0, 0];
+
 /**
- * Prevents the player from walking horizontally through steep walls (like the Giant Stump wall
- * or rock cliffs) while allowing smooth sliding along walls and walking out the Stump tunnel!
+ * Prevents the player from moving horizontally through steep walls (like the Giant Stump wall
+ * or rock cliffs) while allowing smooth sliding along walls and walking out any Stump opening!
  */
 function resolveGorillaMapWallPush(
   px: number,
@@ -3094,6 +3144,7 @@ function resolveGorillaMapWallPush(
   const gx = Math.floor(curX / GORILLA_GRID_CELL);
   const gz = Math.floor(curZ / GORILLA_GRID_CELL);
   const list = gorillaMapGrid.get(gorillaGridKey(gx, gz));
+  const rSq = bodyRadius * bodyRadius;
 
   if (list) {
     for (let i = 0; i < list.length; i += 12) {
@@ -3112,8 +3163,8 @@ function resolveGorillaMapWallPush(
       const cz = list[i + 8];
 
       if (
-        waistY < Math.min(ay, by, cy) - 0.15 ||
-        waistY > Math.max(ay, by, cy) + 0.15 ||
+        waistY < Math.min(ay, by, cy) - 0.1 ||
+        waistY > Math.max(ay, by, cy) + 0.1 ||
         curX < Math.min(ax, bx, cx) - bodyRadius ||
         curX > Math.max(ax, bx, cx) + bodyRadius ||
         curZ < Math.min(az, bz, cz) - bodyRadius ||
@@ -3122,20 +3173,30 @@ function resolveGorillaMapWallPush(
         continue;
       }
 
-      const nx = list[i + 9];
-      const nz = list[i + 11];
-      const nHorizLen = Math.hypot(nx, nz);
-      if (nHorizLen < 0.2) continue;
-      const hnx = nx / nHorizLen;
-      const hnz = nz / nHorizLen;
+      // Find the closest point on the triangle's 2D footprint (segments AB, BC, CA)
+      let bestDistSq = closestPointOnSegment2D(curX, curZ, ax, az, bx, bz, tempSegPt);
+      let bestX = tempSegPt[0];
+      let bestZ = tempSegPt[1];
 
-      const signedDist = (curX - ax) * hnx + (curZ - az) * hnz;
-      if (Math.abs(signedDist) < bodyRadius) {
-        // Push away from the wall toward the side the player is on
-        const side = signedDist >= 0 ? 1 : -1;
-        const push = bodyRadius - Math.abs(signedDist);
-        curX += hnx * side * push;
-        curZ += hnz * side * push;
+      const d2 = closestPointOnSegment2D(curX, curZ, bx, bz, cx, cz, tempSegPt);
+      if (d2 < bestDistSq) {
+        bestDistSq = d2;
+        bestX = tempSegPt[0];
+        bestZ = tempSegPt[1];
+      }
+
+      const d3 = closestPointOnSegment2D(curX, curZ, cx, cz, ax, az, tempSegPt);
+      if (d3 < bestDistSq) {
+        bestDistSq = d3;
+        bestX = tempSegPt[0];
+        bestZ = tempSegPt[1];
+      }
+
+      if (bestDistSq < rSq && bestDistSq > 1e-8) {
+        const dist = Math.sqrt(bestDistSq);
+        const push = bodyRadius - dist;
+        curX += ((curX - bestX) / dist) * push;
+        curZ += ((curZ - bestZ) / dist) * push;
       }
     }
   }
@@ -3196,8 +3257,8 @@ const SETTINGS_BUTTON_LAYOUT: Array<{
     action: 5,
     offset: [-0.175, -0.1, 0.022],
     size: [0.31, 0.125, 0.022],
-    label: 'NORMAL BODY',
-    sublabel: 'Torso & Legs + Stick Walk',
+    label: 'NORMAL MODE',
+    sublabel: 'Thumbstick / WASD Walk',
     accentColor: 0x06b6d4,
   },
   {
@@ -3205,7 +3266,7 @@ const SETTINGS_BUTTON_LAYOUT: Array<{
     offset: [0.175, -0.1, 0.022],
     size: [0.31, 0.125, 0.022],
     label: 'MONKE MODE',
-    sublabel: 'No Torso/Legs • Move w/ Hands',
+    sublabel: 'Climb & Move w/ Hands',
     accentColor: 0xf59e0b,
   },
   {
@@ -3531,23 +3592,22 @@ function buildSettingsMenuAndLauncher(world: World, tableTop: number) {
       miniRight.rotation.set(-Math.PI / 2, 0, 0);
       btnMesh.add(miniRight);
     } else if (cfg.action === 5) {
-      // Miniature Torso & Legs icon on Normal Body button
-      const miniTorso = new Mesh(
-        new BoxGeometry(0.024, 0.026, 0.012),
+      // Miniature thumbstick / controller icon on Normal Mode button
+      const stickBase = new Mesh(
+        new CylinderGeometry(0.016, 0.018, 0.008, 16),
         mat(0x0ea5e9, 0.4),
       );
-      miniTorso.position.set(-0.115, 0.04, bd / 2 + 0.01);
-      miniTorso.raycast = () => {};
-      btnMesh.add(miniTorso);
-      [-0.006, 0.006].forEach((lx) => {
-        const miniLeg = new Mesh(
-          new BoxGeometry(0.009, 0.022, 0.01),
-          mat(0x1e3a8a, 0.5),
-        );
-        miniLeg.position.set(lx, -0.022, 0);
-        miniLeg.raycast = () => {};
-        miniTorso.add(miniLeg);
-      });
+      stickBase.rotation.x = Math.PI / 2;
+      stickBase.position.set(-0.115, 0.036, bd / 2 + 0.01);
+      stickBase.raycast = () => {};
+      const stickTop = new Mesh(
+        new SphereGeometry(0.011, 14, 10),
+        mat(0x38bdf8, 0.3),
+      );
+      stickTop.position.set(0, 0.01, 0);
+      stickTop.raycast = () => {};
+      stickBase.add(stickTop);
+      btnMesh.add(stickBase);
     } else if (cfg.action === 6) {
       // Miniature Monke head & floating hands icon on Monke Mode button
       const monkeIcon = new Mesh(
@@ -3573,116 +3633,16 @@ function buildSettingsMenuAndLauncher(world: World, tableTop: number) {
 }
 
 /**
- * Builds the player's visible 3D Torso & Legs avatar (visible when looking down in Normal Mode,
- * and hidden completely when Monke Mode is active).
- */
-function createPlayerBodyAvatar(): {
-  root: Group;
-  leftLegPivot: Group;
-  rightLegPivot: Group;
-} {
-  const root = new Group();
-  root.name = 'player-torso-and-legs';
-
-  const shirtMat = new MeshStandardMaterial({
-    color: new Color(0x0284c7),
-    roughness: 0.65,
-  });
-  const trimMat = new MeshStandardMaterial({
-    color: new Color(0xe2e8f0),
-    roughness: 0.5,
-  });
-  const beltMat = new MeshStandardMaterial({
-    color: new Color(0x1e293b),
-    roughness: 0.4,
-    metalness: 0.3,
-  });
-  const pantsMat = new MeshStandardMaterial({
-    color: new Color(0x1e3a8a),
-    roughness: 0.75,
-  });
-  const shoeMat = new MeshStandardMaterial({
-    color: new Color(0xdc2626),
-    roughness: 0.45,
-  });
-
-  // Upper & lower torso (positioned slightly behind the camera plane so it doesn't clip near-plane,
-  // but clearly visible when looking down at your chest/waist/legs!)
-  const torsoGroup = new Group();
-  torsoGroup.position.set(0, 0.78, 0.06);
-  root.add(torsoGroup);
-
-  const chest = new Mesh(new BoxGeometry(0.34, 0.44, 0.2), shirtMat);
-  chest.position.set(0, 0.22, 0);
-  chest.castShadow = true;
-  chest.frustumCulled = false;
-  chest.raycast = () => {};
-  torsoGroup.add(chest);
-
-  // Center hoodie stripe on chest
-  const stripe = new Mesh(new BoxGeometry(0.04, 0.42, 0.206), trimMat);
-  stripe.position.set(0, 0.22, 0);
-  stripe.frustumCulled = false;
-  stripe.raycast = () => {};
-  torsoGroup.add(stripe);
-
-  // Waist belt
-  const belt = new Mesh(new BoxGeometry(0.35, 0.055, 0.21), beltMat);
-  belt.position.set(0, 0.0, 0);
-  belt.frustumCulled = false;
-  belt.raycast = () => {};
-  torsoGroup.add(belt);
-
-  const buildLeg = (side: -1 | 1): Group => {
-    const legPivot = new Group();
-    legPivot.position.set(side * 0.105, 0.75, 0.06);
-
-    // Thigh + shin
-    const upperLeg = new Mesh(
-      new CylinderGeometry(0.068, 0.056, 0.68, 16),
-      pantsMat,
-    );
-    upperLeg.position.set(0, -0.34, 0);
-    upperLeg.castShadow = true;
-    upperLeg.frustumCulled = false;
-    upperLeg.raycast = () => {};
-    legPivot.add(upperLeg);
-
-    // Sneaker shoe at the bottom of the leg (extending forward along -Z)
-    const shoe = new Mesh(new BoxGeometry(0.115, 0.075, 0.23), shoeMat);
-    shoe.position.set(0, -0.7, -0.045);
-    shoe.castShadow = true;
-    shoe.frustumCulled = false;
-    shoe.raycast = () => {};
-    legPivot.add(shoe);
-
-    const sole = new Mesh(new BoxGeometry(0.122, 0.024, 0.24), trimMat);
-    sole.position.set(0, -0.73, -0.045);
-    sole.frustumCulled = false;
-    sole.raycast = () => {};
-    legPivot.add(sole);
-
-    root.add(legPivot);
-    return legPivot;
-  };
-
-  const leftLegPivot = buildLeg(-1);
-  const rightLegPivot = buildLeg(1);
-
-  return { root, leftLegPivot, rightLegPivot };
-}
-
-/**
  * Manages:
  * 1. Custom cut-and-doubled Left & Right VR hands ('girl' vs 'boy' styles) attached
  *    to the player's left and right hands in VR (supporting both WebXR Hand Tracking
- *    and controllers).
+ *    and controllers), with no torso or legs mesh attached to the player in any mode.
  * 2. Toggling the VR Settings Menu when pressing the 3-lines button on the left
  *    controller (`InputComponent.Menu` / button 7, or X/Y fallback, or `M` key on
  *    desktop, or clicking the physical 3-lines button on the table).
  * 3. Switching between Daytime and Nighttime lighting/sky/clouds, between
- *    Girl Hand-Tracking Hands and Boy Hand-Tracking Hands, and toggling MONKE MODE
- *    (where your torso and legs disappear and you move & launch yourself using your hands!).
+ *    Girl Hand-Tracking Hands and Boy Hand-Tracking Hands, between Normal Mode and
+ *    Monke Mode, and between the Basic Map (Oak Room) and Monke Map (Giant Stump & Forest).
  */
 export class SettingsAndHandsSystem extends createSystem({
   menus: { required: [SettingsMenu] },
@@ -3708,13 +3668,6 @@ export class SettingsAndHandsSystem extends createSystem({
   private boyLeftHand: Group | null = null;
   private boyRightHand: Group | null = null;
 
-  // Player Torso & Legs avatar (visible in Normal Mode, disappears in Monke Mode)
-  private playerBodyRoot: Group | null = null;
-  private leftLegPivot: Group | null = null;
-  private rightLegPivot: Group | null = null;
-  private prevHeadWorldPos = new Vector3();
-  private walkPhase = 0;
-
   // Monke Mode hand-locomotion state
   private handWorldPos = new Vector3();
   private handRelCurr = [new Vector3(), new Vector3()];
@@ -3726,6 +3679,7 @@ export class SettingsAndHandsSystem extends createSystem({
   private mapWallSample: [number, number] = [0, 0];
   private wallTeleportPos = new Vector3();
   private wallTeleportQuat = new Quaternion();
+  private spawnPos = new Vector3(0, 0, 0.6);
 
   private dirLight: DirectionalLight | null = null;
   private hemiLight: HemisphereLight | null = null;
@@ -3757,14 +3711,6 @@ export class SettingsAndHandsSystem extends createSystem({
 
     this.player.gripSpaces.left.add(this.leftHandRig);
     this.player.gripSpaces.right.add(this.rightHandRig);
-
-    // Build Player Torso & Legs avatar (visible in Normal Mode, disappears in Monke Mode)
-    const body = createPlayerBodyAvatar();
-    this.playerBodyRoot = body.root;
-    this.leftLegPivot = body.leftLegPivot;
-    this.rightLegPivot = body.rightLegPivot;
-    this.world.createTransformEntity(this.playerBodyRoot);
-    this.camera.getWorldPosition(this.prevHeadWorldPos);
 
     this.applyHandStyle('girl');
     this.initBrowserSettingsHUD();
@@ -3891,7 +3837,7 @@ export class SettingsAndHandsSystem extends createSystem({
     }
     if (this.browserStatusBadge) {
       const mapName = this.monkeMap ? 'Monke Map (Giant Stump)' : 'Basic Map (Oak Room)';
-      const modeName = this.monkeMode ? 'Monke Mode' : 'Normal Body';
+      const modeName = this.monkeMode ? 'Monke Mode' : 'Normal Mode';
       this.browserStatusBadge.textContent = `${mapName} • ${modeName}`;
     }
     for (const cfg of SETTINGS_BUTTON_LAYOUT) {
@@ -3977,12 +3923,22 @@ export class SettingsAndHandsSystem extends createSystem({
       }
     }
 
-    // Move the 4 indoor oak wall static physics colliders & ceiling collider out of the way in Monke Map
-    // so the player and balls aren't blocked inside the Giant Stump or when exiting the Stump tunnel
+    // Move the 4 indoor oak wall static physics colliders & ceiling collider out of the way in Monke Map,
+    // and swap LocomotionEnvironment between the Basic Oak Room and the Gorilla Tag Map so the player
+    // can walk or climb out through any of the openings in the Giant Stump!
     const physics = this.world.getSystem(PhysicsSystem);
     this.wallTeleportQuat.identity();
     for (const wall of sceneSkyRefs.wallColliders) {
       wall.mesh.visible = !isMonkeMap;
+      if (isMonkeMap) {
+        if (wall.entity.hasComponent(LocomotionEnvironment)) {
+          wall.entity.removeComponent(LocomotionEnvironment);
+        }
+      } else {
+        if (!wall.entity.hasComponent(LocomotionEnvironment)) {
+          wall.entity.addComponent(LocomotionEnvironment);
+        }
+      }
       this.wallTeleportPos.set(
         wall.homePos[0],
         isMonkeMap ? -60 : wall.homePos[1],
@@ -3993,6 +3949,28 @@ export class SettingsAndHandsSystem extends createSystem({
         position: this.wallTeleportPos,
         quaternion: this.wallTeleportQuat,
       });
+    }
+    if (sceneSkyRefs.floorEntity) {
+      if (isMonkeMap) {
+        if (sceneSkyRefs.floorEntity.hasComponent(LocomotionEnvironment)) {
+          sceneSkyRefs.floorEntity.removeComponent(LocomotionEnvironment);
+        }
+      } else {
+        if (!sceneSkyRefs.floorEntity.hasComponent(LocomotionEnvironment)) {
+          sceneSkyRefs.floorEntity.addComponent(LocomotionEnvironment);
+        }
+      }
+    }
+    if (sceneSkyRefs.gorillaTagWalkableEntity) {
+      if (isMonkeMap) {
+        if (!sceneSkyRefs.gorillaTagWalkableEntity.hasComponent(LocomotionEnvironment)) {
+          sceneSkyRefs.gorillaTagWalkableEntity.addComponent(LocomotionEnvironment);
+        }
+      } else {
+        if (sceneSkyRefs.gorillaTagWalkableEntity.hasComponent(LocomotionEnvironment)) {
+          sceneSkyRefs.gorillaTagWalkableEntity.removeComponent(LocomotionEnvironment);
+        }
+      }
     }
     if (sceneSkyRefs.ceilCollider) {
       const c = sceneSkyRefs.ceilCollider;
@@ -4008,9 +3986,11 @@ export class SettingsAndHandsSystem extends createSystem({
       });
     }
 
-    // Spawn the player at (0, 0, 0) (inside the Giant Stump in Monke Map, or center of Basic Room)
+    // Spawn the player inside the Giant Stump (0, 0, 0.6) in Monke Map or in front of the table in Basic Room
     this.monkeVel.set(0, 0, 0);
-    this.player.position.set(0, 0, 0);
+    this.spawnPos.set(0, 0, 0.6);
+    this.player.position.copy(this.spawnPos);
+    this.world.getSystem(LocomotionSystem)?.setPlayerPosition(this.spawnPos);
     this.world.getSystem(ResetSystem)?.resetAll();
 
     // If the floating Settings Menu is currently open, keep it positioned right in front of the player at the spawnpoint
@@ -4035,10 +4015,6 @@ export class SettingsAndHandsSystem extends createSystem({
 
   private applyMonkeMode(enabled: boolean) {
     this.monkeMode = enabled;
-    // Hide torso and legs completely in Monke Mode; show them in Normal Mode
-    if (this.playerBodyRoot) {
-      this.playerBodyRoot.visible = !enabled;
-    }
 
     // Reset hand-locomotion tracking state
     this.hasHandPrev[0] = false;
@@ -4052,7 +4028,7 @@ export class SettingsAndHandsSystem extends createSystem({
     }
 
     // Switching to Monke Mode automatically spawns you in the Monke Map (Giant Stump);
-    // switching back to Normal Body returns to the Basic Map (and you can also toggle maps separately!)
+    // switching back to Normal Mode returns to the Basic Map (and you can also toggle maps separately!)
     this.applyMapMode(enabled);
   }
 
@@ -4334,13 +4310,12 @@ export class SettingsAndHandsSystem extends createSystem({
       }
     }
 
-    // Integrate Monke Mode momentum, gravity, and Gorilla Tag map terrain/stump collision
-    if (this.monkeMode || this.monkeMap) {
-      if (this.monkeMode) {
-        this.player.position.x += this.monkeVel.x * dt;
-        this.player.position.y += this.monkeVel.y * dt;
-        this.player.position.z += this.monkeVel.z * dt;
-      }
+    // Integrate Monke Mode hand-locomotion momentum, gravity, and Gorilla Tag map collision
+    // (In Normal Mode, LocomotionSystem handles WASD/thumbstick walking against LocomotionEnvironment!)
+    if (this.monkeMode) {
+      this.player.position.x += this.monkeVel.x * dt;
+      this.player.position.y += this.monkeVel.y * dt;
+      this.player.position.z += this.monkeVel.z * dt;
 
       if (this.monkeMap) {
         // Resolve horizontal wall collision against the Giant Stump walls, trees, rocks & canyon
@@ -4353,7 +4328,7 @@ export class SettingsAndHandsSystem extends createSystem({
           bodyX,
           this.player.position.y,
           bodyZ,
-          0.34,
+          0.32,
           this.mapWallSample,
         );
         this.player.position.x = this.mapWallSample[0] - headOffsetX;
@@ -4426,47 +4401,26 @@ export class SettingsAndHandsSystem extends createSystem({
 
       // Safety respawn inside the Giant Stump if the player ever falls below the map
       if (this.player.position.y < -65) {
-        this.player.position.set(0, 0, 0);
+        this.spawnPos.set(0, 0, 0.6);
+        this.player.position.copy(this.spawnPos);
         this.monkeVel.set(0, 0, 0);
       }
+
+      // Keep LocomotionSystem synchronized with the hand-driven player position
+      // so LocomotionSystem.update() never overwrites player.position back to the spawnpoint!
+      this.world.getSystem(LocomotionSystem)?.setPlayerPosition(this.player.position);
 
       const damping = Math.exp(-3.2 * dt);
       this.monkeVel.x *= damping;
       this.monkeVel.z *= damping;
+    } else if (this.monkeMap && this.player.position.y < -65) {
+      // Safety respawn in Normal Mode if the player walks off a cliff edge in Monke Map
+      this.spawnPos.set(0, 0, 0.6);
+      this.player.position.copy(this.spawnPos);
+      this.world.getSystem(LocomotionSystem)?.setPlayerPosition(this.spawnPos);
     }
 
-    // 2. Update Player Torso & Legs Avatar in Normal Mode (hidden in Monke Mode)
-    if (this.playerBodyRoot) {
-      this.playerBodyRoot.visible = !this.monkeMode;
-      if (!this.monkeMode) {
-        const bodyYaw = Math.atan2(-this.headDir.x, -this.headDir.z);
-        this.playerBodyRoot.position.set(
-          this.headPos.x,
-          this.player.position.y,
-          this.headPos.z,
-        );
-        this.playerBodyRoot.rotation.set(0, bodyYaw, 0);
-
-        // Animate walking leg swing based on horizontal head movement speed
-        const moveDist = Math.hypot(
-          this.headPos.x - this.prevHeadWorldPos.x,
-          this.headPos.z - this.prevHeadWorldPos.z,
-        );
-        const speed = moveDist / dt;
-        if (speed > 0.08) {
-          this.walkPhase += Math.min(speed, 3.5) * dt * 3.8;
-          const swing = Math.sin(this.walkPhase) * Math.min(speed * 0.22, 0.55);
-          if (this.leftLegPivot) this.leftLegPivot.rotation.x = swing;
-          if (this.rightLegPivot) this.rightLegPivot.rotation.x = -swing;
-        } else {
-          if (this.leftLegPivot) this.leftLegPivot.rotation.x *= 0.82;
-          if (this.rightLegPivot) this.rightLegPivot.rotation.x *= 0.82;
-        }
-      }
-    }
-    this.prevHeadWorldPos.copy(this.headPos);
-
-    // 3. Check 3-Lines Menu Button on left Quest controller (InputComponent.Menu / button 7, or X/Y fallback)
+    // 2. Check 3-Lines Menu Button on left Quest controller (InputComponent.Menu / button 7, or X/Y fallback)
     const gpLeft = this.input.gamepads.left;
     if (
       gpLeft?.getButtonDown(InputComponent.Menu) ||

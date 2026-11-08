@@ -46,7 +46,10 @@
         "comfortAssistLevel": 0,
         "turningMethod": "smooth",
         "enableJumping": false,
-        "browserControls": true
+        "browserControls": {
+          "keyboard": true,
+          "gamepad": false
+        }
       },
       "grabbing": true,
       "physics": true,
