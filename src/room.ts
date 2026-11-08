@@ -3154,7 +3154,7 @@ const SETTINGS_BUTTON_LAYOUT: Array<{
 }> = [
   {
     action: 0,
-    offset: [0.325, 0.275, 0.02],
+    offset: [0.325, 0.34, 0.02],
     size: [0.068, 0.058, 0.018],
     label: 'X',
     sublabel: 'CLOSE',
@@ -3162,51 +3162,67 @@ const SETTINGS_BUTTON_LAYOUT: Array<{
   },
   {
     action: 1,
-    offset: [-0.175, 0.125, 0.022],
-    size: [0.31, 0.135, 0.022],
+    offset: [-0.175, 0.2, 0.022],
+    size: [0.31, 0.125, 0.022],
     label: 'DAYTIME',
     sublabel: 'Sunny Blue Sky',
     accentColor: 0x38bdf8,
   },
   {
     action: 2,
-    offset: [0.175, 0.125, 0.022],
-    size: [0.31, 0.135, 0.022],
+    offset: [0.175, 0.2, 0.022],
+    size: [0.31, 0.125, 0.022],
     label: 'NIGHTTIME',
     sublabel: 'Moon & Starry Sky',
     accentColor: 0x818cf8,
   },
   {
     action: 3,
-    offset: [-0.175, -0.04, 0.022],
-    size: [0.31, 0.145, 0.022],
+    offset: [-0.175, 0.05, 0.022],
+    size: [0.31, 0.125, 0.022],
     label: 'GIRL HANDS',
     sublabel: 'Light / Slender Hands',
     accentColor: 0xf472b6,
   },
   {
     action: 4,
-    offset: [0.175, -0.04, 0.022],
-    size: [0.31, 0.145, 0.022],
+    offset: [0.175, 0.05, 0.022],
+    size: [0.31, 0.125, 0.022],
     label: 'BOY HANDS',
     sublabel: 'Dark / Broad Hands',
     accentColor: 0x22c55e,
   },
   {
     action: 5,
-    offset: [-0.175, -0.205, 0.022],
-    size: [0.31, 0.14, 0.022],
+    offset: [-0.175, -0.1, 0.022],
+    size: [0.31, 0.125, 0.022],
     label: 'NORMAL BODY',
     sublabel: 'Torso & Legs + Stick Walk',
     accentColor: 0x06b6d4,
   },
   {
     action: 6,
-    offset: [0.175, -0.205, 0.022],
-    size: [0.31, 0.14, 0.022],
+    offset: [0.175, -0.1, 0.022],
+    size: [0.31, 0.125, 0.022],
     label: 'MONKE MODE',
-    sublabel: 'Giant Stump Spawn • Move w/ Hands',
+    sublabel: 'No Torso/Legs • Move w/ Hands',
     accentColor: 0xf59e0b,
+  },
+  {
+    action: 7,
+    offset: [-0.175, -0.25, 0.022],
+    size: [0.31, 0.125, 0.022],
+    label: 'BASIC MAP',
+    sublabel: 'Oak Wood Room & Skylights',
+    accentColor: 0x10b981,
+  },
+  {
+    action: 8,
+    offset: [0.175, -0.25, 0.022],
+    size: [0.31, 0.125, 0.022],
+    label: 'MONKE MAP',
+    sublabel: 'Giant Stump Spawn & Forest',
+    accentColor: 0xa855f7,
   },
 ];
 
@@ -3401,7 +3417,7 @@ function buildSettingsMenuAndLauncher(world: World, tableTop: number) {
 
   // 2. Floating 3D VR Settings Menu Panel (starts closed below floor; 3-lines button toggles it in front of player)
   const panelW = 0.78;
-  const panelH = 0.66;
+  const panelH = 0.78;
   const panelD = 0.024;
   const panelRoot = new Mesh(
     new BoxGeometry(panelW, panelH, panelD),
@@ -3438,14 +3454,14 @@ function buildSettingsMenuAndLauncher(world: World, tableTop: number) {
       roughness: 0.35,
     }),
   );
-  headerBanner.position.set(-0.04, 0.27, panelD / 2 + 0.004);
+  headerBanner.position.set(-0.04, 0.335, panelD / 2 + 0.004);
   headerBanner.raycast = () => {};
   panelRoot.add(headerBanner);
 
   const menuEntity = world.createTransformEntity(panelRoot);
   menuEntity.addComponent(SettingsMenu, { open: false });
 
-  // 3. Interactive Option Buttons (Close, Daytime, Nighttime, Girl Hands, Boy Hands, Normal Body, Monke Mode)
+  // 3. Interactive Option Buttons (Close, Daytime, Nighttime, Girl Hands, Boy Hands, Normal Body, Monke Mode, Basic Map, Monke Map)
   for (const cfg of SETTINGS_BUTTON_LAYOUT) {
     const [bw, bh, bd] = cfg.size;
     const isClose = cfg.action === 0;
@@ -3463,7 +3479,7 @@ function buildSettingsMenuAndLauncher(world: World, tableTop: number) {
               cfg.label,
               cfg.sublabel,
               '#' + cfg.accentColor.toString(16).padStart(6, '0'),
-              cfg.action === 1 || cfg.action === 3 || cfg.action === 5,
+              cfg.action === 1 || cfg.action === 3 || cfg.action === 5 || cfg.action === 7,
             ),
             roughness: 0.3,
           }),
@@ -3677,8 +3693,13 @@ export class SettingsAndHandsSystem extends createSystem({
   private isNight = false;
   private handStyle: 'girl' | 'boy' = 'girl';
   private monkeMode = false;
+  private monkeMap = false;
   private wasMKeyDown = false;
   private wasGKeyDown = false;
+  private browserHudOpen = false;
+  private browserHudModal: HTMLDivElement | null = null;
+  private browserHudBtnMap = new Map<number, HTMLButtonElement>();
+  private browserStatusBadge: HTMLSpanElement | null = null;
 
   private leftHandRig = new Group();
   private rightHandRig = new Group();
@@ -3746,6 +3767,7 @@ export class SettingsAndHandsSystem extends createSystem({
     this.camera.getWorldPosition(this.prevHeadWorldPos);
 
     this.applyHandStyle('girl');
+    this.initBrowserSettingsHUD();
 
     this.cleanupFuncs.push(
       this.queries.pressedButtons.subscribe('qualify', (e) => {
@@ -3753,6 +3775,142 @@ export class SettingsAndHandsSystem extends createSystem({
         this.handleAction(action);
       }),
     );
+  }
+
+  private initBrowserSettingsHUD() {
+    if (typeof document === 'undefined') return;
+
+    const root = document.createElement('div');
+    root.id = 'vr-browser-settings-hud';
+    root.style.cssText =
+      'position:fixed;top:14px;left:14px;z-index:9999;font-family:system-ui,-apple-system,sans-serif;user-select:none;';
+
+    // Top-left bar with ☰ SETTINGS button + Quick Map & Mode pills
+    const topBar = document.createElement('div');
+    topBar.style.cssText = 'display:flex;align-items:center;gap:8px;flex-wrap:wrap;';
+
+    const launcherBtn = document.createElement('button');
+    launcherBtn.type = 'button';
+    launcherBtn.innerHTML = '&#9776; SETTINGS <span style="opacity:0.75;font-size:11px;margin-left:4px;">[M]</span>';
+    launcherBtn.style.cssText =
+      'background:#0f172a;color:#38bdf8;border:2px solid #38bdf8;border-radius:8px;padding:8px 14px;font-weight:800;font-size:14px;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,0.45);display:flex;align-items:center;gap:6px;';
+    launcherBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.handleAction(0);
+    });
+
+    const quickBasicBtn = document.createElement('button');
+    quickBasicBtn.type = 'button';
+    quickBasicBtn.textContent = 'Basic Map';
+    quickBasicBtn.style.cssText =
+      'background:#0f172a;color:#e2e8f0;border:2px solid #10b981;border-radius:8px;padding:7px 11px;font-weight:700;font-size:13px;cursor:pointer;box-shadow:0 4px 10px rgba(0,0,0,0.35);';
+    quickBasicBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.handleAction(7);
+    });
+
+    const quickMonkeMapBtn = document.createElement('button');
+    quickMonkeMapBtn.type = 'button';
+    quickMonkeMapBtn.textContent = 'Monke Map (Giant Stump)';
+    quickMonkeMapBtn.style.cssText =
+      'background:#0f172a;color:#e2e8f0;border:2px solid #a855f7;border-radius:8px;padding:7px 11px;font-weight:700;font-size:13px;cursor:pointer;box-shadow:0 4px 10px rgba(0,0,0,0.35);';
+    quickMonkeMapBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.handleAction(8);
+    });
+
+    const statusBadge = document.createElement('span');
+    statusBadge.style.cssText =
+      'background:rgba(15,23,42,0.85);color:#cbd5e1;border:1px solid #334155;border-radius:8px;padding:6px 10px;font-size:12px;font-weight:600;';
+    this.browserStatusBadge = statusBadge;
+
+    topBar.append(launcherBtn, quickBasicBtn, quickMonkeMapBtn, statusBadge);
+    root.appendChild(topBar);
+
+    // Popup Settings Card for Browser users
+    const modal = document.createElement('div');
+    modal.style.cssText =
+      'display:none;margin-top:10px;width:360px;background:rgba(11,17,32,0.96);border:2px solid #38bdf8;border-radius:12px;padding:14px;box-shadow:0 12px 32px rgba(0,0,0,0.65);color:#fff;';
+    this.browserHudModal = modal;
+
+    const header = document.createElement('div');
+    header.style.cssText =
+      'display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #1e293b;padding-bottom:8px;margin-bottom:10px;';
+    header.innerHTML =
+      '<div style="font-weight:800;font-size:15px;color:#38bdf8;">&#9776; SETTINGS MENU</div>';
+
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.textContent = '✕';
+    closeBtn.style.cssText =
+      'background:#dc2626;color:#fff;border:none;border-radius:6px;padding:3px 9px;font-weight:800;cursor:pointer;';
+    closeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.handleAction(0);
+    });
+    header.appendChild(closeBtn);
+    modal.appendChild(header);
+
+    const grid = document.createElement('div');
+    grid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:8px;';
+
+    for (const cfg of SETTINGS_BUTTON_LAYOUT) {
+      if (cfg.action === 0) continue;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.style.cssText =
+        'background:#0f172a;color:#fff;border:2px solid #334155;border-radius:8px;padding:9px 8px;text-align:center;cursor:pointer;transition:all 0.12s;';
+      btn.innerHTML = `<div style="font-weight:800;font-size:13px;">${cfg.label}</div><div style="font-size:11px;color:#94a3b8;margin-top:2px;">${cfg.sublabel}</div>`;
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.handleAction(cfg.action);
+      });
+      this.browserHudBtnMap.set(cfg.action, btn);
+      grid.appendChild(btn);
+    }
+
+    modal.appendChild(grid);
+
+    const hint = document.createElement('div');
+    hint.style.cssText =
+      'margin-top:10px;font-size:11px;color:#94a3b8;text-align:center;border-top:1px solid #1e293b;padding-top:8px;';
+    hint.textContent =
+      'Browser Controls: WASD Move • Mouse Drag / Right-Click Look • [M] Settings • [G] Monke Mode';
+    modal.appendChild(hint);
+
+    root.appendChild(modal);
+    document.body.appendChild(root);
+
+    this.refreshBrowserHUD();
+    this.cleanupFuncs.push(() => root.remove());
+  }
+
+  private refreshBrowserHUD() {
+    if (this.browserHudModal) {
+      this.browserHudModal.style.display = this.browserHudOpen ? 'block' : 'none';
+    }
+    if (this.browserStatusBadge) {
+      const mapName = this.monkeMap ? 'Monke Map (Giant Stump)' : 'Basic Map (Oak Room)';
+      const modeName = this.monkeMode ? 'Monke Mode' : 'Normal Body';
+      this.browserStatusBadge.textContent = `${mapName} • ${modeName}`;
+    }
+    for (const cfg of SETTINGS_BUTTON_LAYOUT) {
+      if (cfg.action === 0) continue;
+      const btn = this.browserHudBtnMap.get(cfg.action);
+      if (!btn) continue;
+      const isActive =
+        (cfg.action === 1 && !this.isNight) ||
+        (cfg.action === 2 && this.isNight) ||
+        (cfg.action === 3 && this.handStyle === 'girl') ||
+        (cfg.action === 4 && this.handStyle === 'boy') ||
+        (cfg.action === 5 && !this.monkeMode) ||
+        (cfg.action === 6 && this.monkeMode) ||
+        (cfg.action === 7 && !this.monkeMap) ||
+        (cfg.action === 8 && this.monkeMap);
+      const accentHex = '#' + cfg.accentColor.toString(16).padStart(6, '0');
+      btn.style.borderColor = isActive ? accentHex : '#334155';
+      btn.style.background = isActive ? '#1e293b' : '#0f172a';
+    }
   }
 
   private handleAction(action: number) {
@@ -3784,29 +3942,33 @@ export class SettingsAndHandsSystem extends createSystem({
       this.refreshMenuButtonTextures();
       // Fun playful monke audio chirp!
       playSynthTone(320, 0.18, 'sawtooth', 640);
+    } else if (action === 7) {
+      this.applyMapMode(false);
+      this.refreshMenuButtonTextures();
+      playSynthTone(440, 0.16, 'sine', 523.25);
+    } else if (action === 8) {
+      this.applyMapMode(true);
+      this.refreshMenuButtonTextures();
+      playSynthTone(349.23, 0.18, 'triangle', 587.33);
     }
   }
 
-  private applyMonkeMode(enabled: boolean) {
-    this.monkeMode = enabled;
-    // Hide torso and legs completely in Monke Mode; show them in Normal Mode
-    if (this.playerBodyRoot) {
-      this.playerBodyRoot.visible = !enabled;
-    }
+  private applyMapMode(isMonkeMap: boolean) {
+    this.monkeMap = isMonkeMap;
 
     // Show the Gorilla Tag Map (Giant Stump at (0,0,0) + Forest, Gazebo, Treehouse, Canyon, Caves)
-    // and hide the indoor oak room's tiled floor, oak walls, and arched oak ceiling in Monke Mode
+    // when Monke Map is active, or show the Basic Oak Wood Room when Basic Map is active!
     if (sceneSkyRefs.gorillaTagMapGroup) {
-      sceneSkyRefs.gorillaTagMapGroup.visible = enabled;
+      sceneSkyRefs.gorillaTagMapGroup.visible = isMonkeMap;
     }
     if (sceneSkyRefs.floorMesh) {
-      sceneSkyRefs.floorMesh.visible = !enabled;
+      sceneSkyRefs.floorMesh.visible = !isMonkeMap;
     }
     if (sceneSkyRefs.indoorArchGroup) {
-      sceneSkyRefs.indoorArchGroup.visible = !enabled;
+      sceneSkyRefs.indoorArchGroup.visible = !isMonkeMap;
     }
     if (sceneSkyRefs.skyCanopy) {
-      if (enabled) {
+      if (isMonkeMap) {
         sceneSkyRefs.skyCanopy.scale.set(22, 1, 28);
         sceneSkyRefs.skyCanopy.position.set(0, 72, 0);
       } else {
@@ -3815,15 +3977,15 @@ export class SettingsAndHandsSystem extends createSystem({
       }
     }
 
-    // Move the 4 indoor oak wall static physics colliders & ceiling collider out of the way in Monke Mode
+    // Move the 4 indoor oak wall static physics colliders & ceiling collider out of the way in Monke Map
     // so the player and balls aren't blocked inside the Giant Stump or when exiting the Stump tunnel
     const physics = this.world.getSystem(PhysicsSystem);
     this.wallTeleportQuat.identity();
     for (const wall of sceneSkyRefs.wallColliders) {
-      wall.mesh.visible = !enabled;
+      wall.mesh.visible = !isMonkeMap;
       this.wallTeleportPos.set(
         wall.homePos[0],
-        enabled ? -60 : wall.homePos[1],
+        isMonkeMap ? -60 : wall.homePos[1],
         wall.homePos[2],
       );
       wall.mesh.position.copy(this.wallTeleportPos);
@@ -3836,7 +3998,7 @@ export class SettingsAndHandsSystem extends createSystem({
       const c = sceneSkyRefs.ceilCollider;
       this.wallTeleportPos.set(
         c.homePos[0],
-        enabled ? -60 : c.homePos[1],
+        isMonkeMap ? -60 : c.homePos[1],
         c.homePos[2],
       );
       c.entity.object3D?.position.copy(this.wallTeleportPos);
@@ -3846,18 +4008,8 @@ export class SettingsAndHandsSystem extends createSystem({
       });
     }
 
-    // Reset hand-locomotion tracking state
-    this.hasHandPrev[0] = false;
-    this.hasHandPrev[1] = false;
+    // Spawn the player at (0, 0, 0) (inside the Giant Stump in Monke Map, or center of Basic Room)
     this.monkeVel.set(0, 0, 0);
-
-    // Disable joystick sliding while in Monke Mode so movement is driven by your hands
-    const locomotion = this.world.getSystem(LocomotionSystem);
-    if (locomotion) {
-      locomotion.config.slidingSpeed.value = enabled ? 0.0001 : 3.0;
-    }
-
-    // Spawn the player at (0, 0, 0) inside the Giant Stump (with all room objects around them!)
     this.player.position.set(0, 0, 0);
     this.world.getSystem(ResetSystem)?.resetAll();
 
@@ -3879,6 +4031,29 @@ export class SettingsAndHandsSystem extends createSystem({
         this.syncMenuTransforms(m, true);
       }
     }
+  }
+
+  private applyMonkeMode(enabled: boolean) {
+    this.monkeMode = enabled;
+    // Hide torso and legs completely in Monke Mode; show them in Normal Mode
+    if (this.playerBodyRoot) {
+      this.playerBodyRoot.visible = !enabled;
+    }
+
+    // Reset hand-locomotion tracking state
+    this.hasHandPrev[0] = false;
+    this.hasHandPrev[1] = false;
+    this.monkeVel.set(0, 0, 0);
+
+    // Disable joystick sliding while in Monke Mode so movement is driven by your hands
+    const locomotion = this.world.getSystem(LocomotionSystem);
+    if (locomotion) {
+      locomotion.config.slidingSpeed.value = enabled ? 0.0001 : 3.0;
+    }
+
+    // Switching to Monke Mode automatically spawns you in the Monke Map (Giant Stump);
+    // switching back to Normal Body returns to the Basic Map (and you can also toggle maps separately!)
+    this.applyMapMode(enabled);
   }
 
   private applyHandStyle(style: 'girl' | 'boy') {
@@ -3937,6 +4112,8 @@ export class SettingsAndHandsSystem extends createSystem({
   }
 
   private refreshMenuButtonTextures() {
+    this.refreshBrowserHUD();
+
     for (const b of this.queries.buttons.entities) {
       const action = b.getValue(SettingsButton, 'action') ?? 0;
       if (action === 0) continue;
@@ -3951,7 +4128,9 @@ export class SettingsAndHandsSystem extends createSystem({
         (action === 3 && this.handStyle === 'girl') ||
         (action === 4 && this.handStyle === 'boy') ||
         (action === 5 && !this.monkeMode) ||
-        (action === 6 && this.monkeMode);
+        (action === 6 && this.monkeMode) ||
+        (action === 7 && !this.monkeMap) ||
+        (action === 8 && this.monkeMap);
 
       const matStd = mesh.material as MeshStandardMaterial;
       if (matStd.map) {
@@ -3971,6 +4150,11 @@ export class SettingsAndHandsSystem extends createSystem({
     for (const m of this.queries.menus.entities) {
       const nextOpen = !(m.getValue(SettingsMenu, 'open') ?? false);
       m.setValue(SettingsMenu, 'open', nextOpen);
+      this.browserHudOpen = nextOpen;
+
+      if (nextOpen && typeof document !== 'undefined' && document.pointerLockElement) {
+        document.exitPointerLock?.();
+      }
 
       if (nextOpen) {
         // Place the floating Settings Menu comfortably in front of the player's current view
@@ -3994,6 +4178,7 @@ export class SettingsAndHandsSystem extends createSystem({
 
       this.syncMenuTransforms(m, nextOpen);
     }
+    this.refreshBrowserHUD();
   }
 
   private syncMenuTransforms(menuEntity: Entity, isOpen: boolean) {
@@ -4150,69 +4335,93 @@ export class SettingsAndHandsSystem extends createSystem({
     }
 
     // Integrate Monke Mode momentum, gravity, and Gorilla Tag map terrain/stump collision
-    if (this.monkeMode) {
-      this.player.position.x += this.monkeVel.x * dt;
-      this.player.position.y += this.monkeVel.y * dt;
-      this.player.position.z += this.monkeVel.z * dt;
-
-      // Resolve horizontal wall collision against the Giant Stump walls, trees, rocks & canyon
-      const headOffsetX = this.headPos.x - this.player.position.x;
-      const headOffsetZ = this.headPos.z - this.player.position.z;
-      const bodyX = this.player.position.x + headOffsetX;
-      const bodyZ = this.player.position.z + headOffsetZ;
-
-      resolveGorillaMapWallPush(
-        bodyX,
-        this.player.position.y,
-        bodyZ,
-        0.34,
-        this.mapWallSample,
-      );
-      this.player.position.x = this.mapWallSample[0] - headOffsetX;
-      this.player.position.z = this.mapWallSample[1] - headOffsetZ;
-
-      // Sample Gorilla Tag map ground/ramp/branch height & ceiling height under the player
-      sampleGorillaMapVertical(
-        this.mapWallSample[0],
-        this.player.position.y,
-        this.mapWallSample[1],
-        this.mapVertSample,
-      );
-      let groundY = this.mapVertSample[0];
-      const ceilingY = this.mapVertSample[1];
-
-      // Inside the Giant Stump, also allow jumping onto the center table!
-      const overTable =
-        Math.abs(this.mapWallSample[0]) < TABLE.width / 2 - 0.04 &&
-        Math.abs(this.mapWallSample[1] - TABLE.z) < TABLE.depth / 2 - 0.04 &&
-        this.player.position.y >= TABLE.height - 0.22 &&
-        this.player.position.y <= TABLE.height + 1.8;
-      if (overTable && TABLE.height > groundY) {
-        groundY = TABLE.height;
+    if (this.monkeMode || this.monkeMap) {
+      if (this.monkeMode) {
+        this.player.position.x += this.monkeVel.x * dt;
+        this.player.position.y += this.monkeVel.y * dt;
+        this.player.position.z += this.monkeVel.z * dt;
       }
 
-      if (groundY > -100) {
-        if (this.player.position.y > groundY) {
-          this.monkeVel.y -= 9.2 * dt;
-          if (this.player.position.y + this.monkeVel.y * dt <= groundY) {
+      if (this.monkeMap) {
+        // Resolve horizontal wall collision against the Giant Stump walls, trees, rocks & canyon
+        const headOffsetX = this.headPos.x - this.player.position.x;
+        const headOffsetZ = this.headPos.z - this.player.position.z;
+        const bodyX = this.player.position.x + headOffsetX;
+        const bodyZ = this.player.position.z + headOffsetZ;
+
+        resolveGorillaMapWallPush(
+          bodyX,
+          this.player.position.y,
+          bodyZ,
+          0.34,
+          this.mapWallSample,
+        );
+        this.player.position.x = this.mapWallSample[0] - headOffsetX;
+        this.player.position.z = this.mapWallSample[1] - headOffsetZ;
+
+        // Sample Gorilla Tag map ground/ramp/branch height & ceiling height under the player
+        sampleGorillaMapVertical(
+          this.mapWallSample[0],
+          this.player.position.y,
+          this.mapWallSample[1],
+          this.mapVertSample,
+        );
+        let groundY = this.mapVertSample[0];
+        const ceilingY = this.mapVertSample[1];
+
+        // Inside the Giant Stump, also allow jumping onto the center table!
+        const overTable =
+          Math.abs(this.mapWallSample[0]) < TABLE.width / 2 - 0.04 &&
+          Math.abs(this.mapWallSample[1] - TABLE.z) < TABLE.depth / 2 - 0.04 &&
+          this.player.position.y >= TABLE.height - 0.22 &&
+          this.player.position.y <= TABLE.height + 1.8;
+        if (overTable && TABLE.height > groundY) {
+          groundY = TABLE.height;
+        }
+
+        if (groundY > -100) {
+          if (this.player.position.y > groundY) {
+            this.monkeVel.y -= 9.2 * dt;
+            if (this.player.position.y + this.monkeVel.y * dt <= groundY) {
+              this.player.position.y = groundY;
+              if (this.monkeVel.y < 0) this.monkeVel.y = 0;
+            }
+          } else {
             this.player.position.y = groundY;
             if (this.monkeVel.y < 0) this.monkeVel.y = 0;
           }
         } else {
+          this.monkeVel.y -= 9.2 * dt;
+        }
+
+        // Prevent head from clipping above a low ceiling (such as inside the Giant Stump or cave tunnels)
+        if (ceilingY < 1000) {
+          const maxFootY = ceilingY - 1.45;
+          if (this.player.position.y > maxFootY) {
+            this.player.position.y = Math.max(groundY > -100 ? groundY : -100, maxFootY);
+            if (this.monkeVel.y > 0) this.monkeVel.y = 0;
+          }
+        }
+      } else {
+        // Monke Mode inside the Basic Oak Wood Room
+        const overTable =
+          Math.abs(this.headPos.x) < TABLE.width / 2 - 0.05 &&
+          Math.abs(this.headPos.z - TABLE.z) < TABLE.depth / 2 - 0.05 &&
+          this.player.position.y >= TABLE.height - 0.18;
+        const groundY = overTable ? TABLE.height : 0;
+
+        if (this.player.position.y > groundY) {
+          this.monkeVel.y -= 9.2 * dt;
+        } else {
           this.player.position.y = groundY;
           if (this.monkeVel.y < 0) this.monkeVel.y = 0;
         }
-      } else {
-        this.monkeVel.y -= 9.2 * dt;
-      }
 
-      // Prevent head from clipping above a low ceiling (such as inside the Giant Stump or cave tunnels)
-      if (ceilingY < 1000) {
-        const maxFootY = ceilingY - 1.45;
-        if (this.player.position.y > maxFootY) {
-          this.player.position.y = Math.max(groundY > -100 ? groundY : -100, maxFootY);
-          if (this.monkeVel.y > 0) this.monkeVel.y = 0;
-        }
+        const maxX = ROOM.width / 2 - 0.32;
+        const maxZ = ROOM.depth / 2 - 0.32;
+        this.player.position.x = Math.max(-maxX, Math.min(maxX, this.player.position.x));
+        this.player.position.z = Math.max(-maxZ, Math.min(maxZ, this.player.position.z));
+        this.player.position.y = Math.min(1.85, this.player.position.y);
       }
 
       // Safety respawn inside the Giant Stump if the player ever falls below the map
