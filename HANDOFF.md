@@ -6,12 +6,31 @@ running, and tell him exactly what to reload or restart.
 
 ## What it is
 
-- A single room (6 m × 6 m × 3 m) with a table in front of the player.
-- Three throwable balls on the table.
-- A 6-can pyramid near the far wall to knock over.
-- A red reset button on the table.
-- Runs in the **Quest Browser via WebXR**. The PC only serves files; nothing is installed on the headset.
-- Status: **working on the headset** (grab, throw, reset confirmed by the owner).
+- An oak-paneled room with a table of toys, built up across many small commits (see `git log`).
+- **Throwing:** balls, a can pyramid, and a dartboard with sticky darts plus a throw assist.
+- **RC car** with a remote: steering, gas, brake, and throttle.
+- **Stretchy floating head** with 10 pullable parts and an elastic reset.
+- **Five toy stations:** basketball hoop, bowling lane, xylophone, whack-a-mole, and reflex bag / high-striker.
+- **Movement:** smooth locomotion in VR (left stick moves, right stick turns), and WASD + mouse look on desktop.
+- **Settings menu:**
+  - Opens with the left controller's menu button, X/Y, or the `M` key.
+  - Day/Night toggle.
+  - Hand models.
+  - **Monke Mode:** Gorilla Tag-style hand locomotion.
+  - Map choice: **Basic Map** (oak room) or **Monke Map** (Giant Stump, `public/gorilla-tag-map.glb`).
+- Runs in the **Quest Browser via WebXR**, with nothing installed on the headset.
+- **Live site:** https://gregfranco.github.io/vr_game_experiment/
+
+## Hosting (GitHub Pages)
+
+- **Repo:** https://github.com/gregfranco/vr_game_experiment. The default branch is `main`.
+- **Deploys:** every push to `main` runs `.github/workflows/deploy-pages.yml`. It runs typecheck, then build, then publishes `dist/` to Pages.
+- **If the deploy workflow fails, the live site does not change.** Check the repo's Actions tab.
+- **The site is served from the `/vr_game_experiment/` subpath.** Never reference assets with a leading `/`, because that resolves to the domain root and 404s on Pages.
+  - Asset URLs in `src/assets.ts`: use `` `${import.meta.env.BASE_URL}file.glb` ``.
+  - Anything in `public/`: same rule. Use `BASE_URL` or a relative path.
+  - `vite.config.ts` has `base: './'`. Keep it.
+- **Before pushing, run `npm run build`.** Ideally also serve `dist/` under a `/vr_game_experiment/` folder and load it, to catch path breakage.
 
 ## Stack
 
@@ -24,7 +43,8 @@ running, and tell him exactly what to reload or restart.
 ## Location and environment
 
 - **Project path:** `C:\projects\vr-ball-game` on a Windows PC. Use PowerShell syntax for commands.
-- **No git yet.** Before your first change, run `git init` and commit the current state so changes can be rolled back.
+- **Git:** the project is a clone of the GitHub repo above. Commit each working change; pushing to `main` publishes it.
+  - If the owner's older local folder still has a `master` branch with no remote, re-clone from GitHub rather than pushing from it.
 - **The PC has a VirtualBox adapter at `192.168.56.1`.** It is NOT reachable from the headset. Never give the owner that address.
 - **The PC's Wi-Fi address is currently `192.168.0.236`.** It can change. To recheck, run `ipconfig` and use the IPv4 address under "Wireless LAN adapter Wi-Fi".
 - **Headset URL:** `https://192.168.0.236:8081/`. The dev server uses a self-signed certificate, which the owner has already accepted on the Quest. WebXR needs HTTPS, so never switch to plain http.
@@ -50,15 +70,15 @@ npm run build                      # production build to dist/ (sanity check)
 | File | Role |
 |---|---|
 | `src/index.ts` | `World.create(...)` with the project config, registers `ResetSystem`, calls `buildRoom(world)` |
-| `src/room.ts` | **Everything gameplay.** Tunable constants at the top (`ROOM`, `BALL_RADIUS`, `BALL_BOUNCE`, `BALL_COLORS`, `TABLE`). `buildRoom()` creates the walls, floor, table, balls, cans and reset button in code. `ResetSystem` handles resets. |
+| `src/room.ts` | **Everything gameplay** (~4,400 lines). `buildRoom()` builds every object in code. It holds one system per feature: `DartSystem`, `RCCarSystem`, `ResetSystem`, `CloudSystem`, `StretchyFaceSystem`, `ToyStationsSystem`, `DesktopFirstPersonSystem`, `SettingsAndHandsSystem` (menu, maps, Monke Mode). Tunables are at the top. Splitting it into one file per feature is a reasonable refactor if asked. |
 | `src/ball-components.ts` | Custom ECS components: `Resettable { home: Vec3 }` and `ResetButton` (a tag) |
 | `src/components.ts` | `defineComponents([...])`. Every custom component must be listed here. |
-| `src/assets.ts` | `defineAssets({})`. Empty, because the room is procedural. Must stay side-effect free (it is evaluated twice). |
+| `src/assets.ts` | `defineAssets()` holds only `gorillaTagMap` (the Monke Map stump GLB, loaded via `BASE_URL`). Must stay side-effect free, because it is evaluated twice. |
 | `iwsdk.config.json` | **Project authority.** Sets VR mode, `grabbing: true`, `physics: true`, `locomotion: false`, hand tracking on, and the camera start pose. |
 | `public/scenes/main.iwsdk.scene.json` | Scene JSON. Now contains **only the two lights** (key directional light with shadows, plus a hemisphere fill light). |
 | `start-vr.bat` / `QUEST.md` | Owner-facing launcher and quick start |
 | `AGENTS.md`, `.agents/skills/`, `.codex/`, `.cursor/`, `.claude/` | Meta's generated agent guidance and skills for IWSDK. **Read `AGENTS.md` before editing.** The skills (`iwsdk-physics`, `iwsdk-grab`, `iwsdk-compose-scene`, etc.) are worth consulting for their domains. |
-| `src/scene-assets/*.ts`, `public/ui/*.uikitml`, `public/audio/` | Leftovers from the starter template. **Unused**; safe to delete or reuse. |
+| `src/scene-assets/*.ts`, `public/ui/*.uikitml`, `public/audio/`, `public/hands/` | Leftovers: the starter template's files and hand models that are no longer loaded. **Unused**; safe to delete or reuse. |
 
 ## How the gameplay works
 
@@ -85,7 +105,7 @@ npm run build                      # production build to dist/ (sanity check)
 7. `Grabbed` is managed by `GrabSystem`. Read it; never add or remove it.
 8. No allocations inside `update()`. Preallocate in `init()` or as class fields. The target is 72–90 fps on Quest.
 9. Use `entity.dispose()`, not `destroy()`.
-10. Turning on `locomotion` requires adding the `LocomotionEnvironment` component to the floor entity, or the player falls through.
+10. Locomotion is **on**. Any new walkable surface needs the `LocomotionEnvironment` component, or the player falls through it.
 11. New custom components go in a system-free module and must be registered in `src/components.ts`.
 12. Run `npm run typecheck` after every change, before telling the owner to test.
 
