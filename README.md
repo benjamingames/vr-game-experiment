@@ -4,7 +4,7 @@ A WebXR playground for the Meta Quest 3, built with Meta's
 [Immersive Web SDK](https://iwsdk.dev) (Three.js + ECS + Havok physics).
 It runs in a browser, so there is nothing to install on the headset.
 
-**Play:** https://benjamingames.github.io/vr_game_experiment/
+**Play:** https://benjamingames.github.io/vr-game-experiment/
 
 - **Quest 3:** open that link in the Quest Browser and press **Enter XR**.
 - **PC:** open it in Chrome or Edge. Move with WASD and look with the mouse.
