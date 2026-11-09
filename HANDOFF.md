@@ -19,11 +19,11 @@ running, and tell him exactly what to reload or restart.
   - **Monke Mode:** Gorilla Tag-style hand locomotion.
   - Map choice: **Basic Map** (oak room) or **Monke Map** (Giant Stump, `public/gorilla-tag-map.glb`).
 - Runs in the **Quest Browser via WebXR**, with nothing installed on the headset.
-- **Live site:** https://gregfranco.github.io/vr_game_experiment/
+- **Live site:** https://benjamingames.github.io/vr_game_experiment/
 
 ## Hosting (GitHub Pages)
 
-- **Repo:** https://github.com/gregfranco/vr_game_experiment. The default branch is `main`.
+- **Repo:** https://github.com/benjamingames/vr_game_experiment. The default branch is `main`.
 - **Deploys:** every push to `main` runs `.github/workflows/deploy-pages.yml`. It runs typecheck, then build, then publishes `dist/` to Pages.
 - **If the deploy workflow fails, the live site does not change.** Check the repo's Actions tab.
 - **The site is served from the `/vr_game_experiment/` subpath.** Never reference assets with a leading `/`, because that resolves to the domain root and 404s on Pages.
