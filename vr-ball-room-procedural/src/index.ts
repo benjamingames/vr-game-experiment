@@ -12,7 +12,8 @@ import {
   ToyStationsSystem,
 } from './room.js';
 import { MazeSystem } from './maze.js';
-import { ProcEnvSystem } from './procedural/env.js';
+import { ProcEnvSystem, procEnv } from './procedural/env.js';
+import { ShowcaseSystem } from './procedural/showcase.js';
 import { QUALITY, setQualityTier } from './procedural/quality.js';
 
 World.create(
@@ -37,6 +38,7 @@ World.create(
   world.registerSystem(ResetSystem);
   world.registerSystem(MazeSystem);
   world.registerSystem(ProcEnvSystem);
+  world.registerSystem(ShowcaseSystem);
   buildRoom(world);
   // Graphics quality switch (bottom-left). Textures are generated at startup, so it reloads.
   const qBtn = document.createElement('button');
@@ -73,6 +75,28 @@ World.create(
         }
         if (look.length === 2) Object.assign(desktop ?? {}, { pitch: look[0], yaw: look[1] });
       }, 30);
+      const errs: string[] = [];
+      if (dbg.includes('info')) {
+        window.addEventListener('error', (e) => errs.push(String(e.message).slice(0, 160)));
+        const ce = console.error.bind(console);
+        console.error = (...args: unknown[]) => {
+          errs.push(args.map(String).join(' ').slice(0, 160));
+          ce(...args);
+        };
+        setInterval(() => {
+          let out = '';
+          world.scene.traverse((o) => {
+            const l = o as unknown as { isDirectionalLight?: boolean; intensity: number; castShadow: boolean; position: { toArray(): number[] }; target: { position: { toArray(): number[] } }; shadow: { camera: { left: number; far: number } } };
+            if (l.isDirectionalLight) out += JSON.stringify({ i: l.intensity, cs: l.castShadow, p: l.position.toArray().map((v) => +v.toFixed(1)), t: l.target.position.toArray().map((v) => +v.toFixed(1)), half: l.shadow.camera.left, far: l.shadow.camera.far, vis: o.visible });
+          });
+          const pe = world.getSystem(ProcEnvSystem) as unknown as { frames: number; settle: number };
+          document.title =
+            'DBG ' + out + ' fog=' + !!world.scene.fog +
+            ' player=' + world.player.position.toArray().map((v) => +v.toFixed(1)) +
+            ` env:frames=${pe?.frames},settle=${pe?.settle},dirty=${procEnv.dirty},zone=${!!procEnv.zone}` +
+            ' errs=' + errs.slice(0, 3).join(' | ');
+        }, 200);
+      }
     }, 300);
   }
 });

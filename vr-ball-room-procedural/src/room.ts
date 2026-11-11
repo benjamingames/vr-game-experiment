@@ -56,6 +56,7 @@ import {
 import { buildMaze, mazeHooks } from './maze.js';
 import { buildProceduralArena } from './procedural/arena.js';
 import { buildDecor } from './procedural/decor.js';
+import { buildShowcase } from './procedural/showcase.js';
 import {
   BoxGeometry,
   CylinderGeometry,
@@ -151,6 +152,7 @@ export function buildRoom(world: World) {
   // Tiled light-gray floor, oak wood paneled walls, arched ceiling with 2 skylights & 3D clouds
   buildArchitecture(world);
   buildDecor();
+  buildShowcase(world);
 
   // Table in front of the player
   const tableEntity = staticBox(

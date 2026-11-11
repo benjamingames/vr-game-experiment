@@ -71,6 +71,15 @@ const beamUniforms = {
 /** Shared clock uniform for wind and other shader animation. */
 export const timeUniform = skyUniforms.uTime;
 
+/** Another lit space (e.g. the gallery): where to put the probe, shadow frustum and box projection. */
+export interface EnvZone {
+  probe: Vector3;
+  boxMin: Vector3;
+  boxMax: Vector3;
+  lightTarget: Vector3;
+  shadowHalf: number;
+}
+
 export const procEnv = {
   night: false,
   monke: false,
@@ -92,6 +101,16 @@ export const procEnv = {
     this.monke = monke;
     this.dirty = true;
   },
+  /** Zone the player is currently in; null means the main room. */
+  zone: null as EnvZone | null,
+  setZone(zone: EnvZone | null) {
+    if (this.zone === zone) return;
+    this.zone = zone;
+    this.dirty = true;
+  },
+  /** Unit vector pointing at the sun (valid once sunReady is true). */
+  sunDir: new Vector3(0, 1, 0),
+  sunReady: false,
 };
 
 // ---- Box-projected image-based lighting ------------------------------------------
@@ -117,7 +136,7 @@ const ENV_PARS = ShaderChunk.envmap_physical_pars_fragment.replace(
 );
 
 type CompileHook = Material['onBeforeCompile'];
-const boxCompile: CompileHook = (shader) => {
+export const boxCompile: CompileHook = (shader) => {
   shader.uniforms.uBoxMin = boxUniforms.uBoxMin;
   shader.uniforms.uBoxMax = boxUniforms.uBoxMax;
   shader.uniforms.uProbePos = boxUniforms.uProbePos;
@@ -500,6 +519,10 @@ export class ProcEnvSystem extends createSystem({}) {
   private L = new Vector3(0, -1, 0);
   private lightHome = new Vector3();
   private targetHome = new Vector3();
+  private carrier: Object3D | null = null;
+  private carrierHome = new Vector3();
+  private homeDist = 10;
+  private tmp = new Vector3();
   private camPos = new Vector3();
   private monkeFog = new FogExp2(0xbcd3ea, 0.0075);
   private appliedMonke = false;
@@ -519,7 +542,12 @@ export class ProcEnvSystem extends createSystem({}) {
     dl.getWorldPosition(this.lightHome);
     dl.target.getWorldPosition(this.targetHome);
     this.L.copy(this.targetHome).sub(this.lightHome).normalize();
+    this.homeDist = this.lightHome.distanceTo(this.targetHome);
+    this.carrier = dl.parent && dl.parent !== this.scene ? dl.parent : dl;
+    this.carrierHome.copy(this.carrier.position);
     skyUniforms.uSun.value.copy(this.L).negate();
+    procEnv.sunDir.copy(this.L).negate();
+    procEnv.sunReady = true;
     beamUniforms.uL.value.copy(this.L);
 
     dl.shadow.mapSize.set(QUALITY.shadowMapSize, QUALITY.shadowMapSize);
@@ -572,16 +600,19 @@ export class ProcEnvSystem extends createSystem({}) {
 
     // Shadow frustum: tight on the room indoors, wide and player-following outdoors
     const cam = dl.shadow.camera;
-    const half = monke ? 26 : 4.6;
+    const zone = monke ? null : procEnv.zone;
+    const half = monke ? 26 : zone ? zone.shadowHalf : 4.6;
     cam.left = -half;
     cam.right = half;
     cam.top = half;
     cam.bottom = -half;
     cam.near = 1;
-    cam.far = monke ? 120 : 26;
+    cam.far = monke ? 120 : zone ? 60 : 26;
     cam.updateProjectionMatrix();
-    if (!monke) {
-      this.placeLight(this.targetHome, this.lightHome.distanceTo(this.targetHome));
+    if (zone) {
+      this.placeLight(zone.lightTarget, 20);
+    } else if (!monke) {
+      this.placeLight(this.targetHome, 0);
     }
     this.monkeFog.color.setHex(night ? 0x060a14 : 0xbcd3ea);
     if (monke !== this.appliedMonke) {
@@ -593,14 +624,19 @@ export class ProcEnvSystem extends createSystem({}) {
     this.appliedNight = night;
   }
 
-  private placeLight(target: Vector3, dist: number) {
+  /**
+   * Re-centres the sun on `target`, optionally backing it off along its own ray by `extra` metres.
+   * The engine re-aims the light from its entity's transform every frame, so the whole entity is
+   * moved (which carries the light and its target together) rather than the light alone.
+   */
+  private placeLight(target: Vector3, extra: number) {
     const dl = this.dirLight!;
-    const parent = dl.parent;
-    dl.position.copy(target).addScaledVector(this.L, -dist);
-    if (parent) parent.worldToLocal(dl.position);
-    dl.target.position.copy(target);
-    if (dl.target.parent) dl.target.parent.worldToLocal(dl.target.position);
-    dl.updateMatrixWorld(true);
+    const c = this.carrier!;
+    c.position.copy(this.carrierHome).add(target).sub(this.targetHome).addScaledVector(this.L, -extra);
+    c.updateMatrixWorld(true);
+    dl.getWorldPosition(this.tmp).addScaledVector(this.L, this.homeDist);
+    if (dl.target.parent) dl.target.parent.worldToLocal(this.tmp);
+    dl.target.position.copy(this.tmp);
     dl.target.updateMatrixWorld(true);
   }
 
@@ -614,8 +650,17 @@ export class ProcEnvSystem extends createSystem({}) {
       this.player.getWorldPosition(cam.position);
       cam.position.y += 4;
       boxUniforms.uBoxOn.value = 0;
+    } else if (procEnv.zone) {
+      cam.position.copy(procEnv.zone.probe);
+      boxUniforms.uBoxMin.value.copy(procEnv.zone.boxMin);
+      boxUniforms.uBoxMax.value.copy(procEnv.zone.boxMax);
+      boxUniforms.uProbePos.value.copy(procEnv.zone.probe);
+      boxUniforms.uBoxOn.value = 1;
     } else {
       cam.position.copy(ROOM_PROBE_POS);
+      boxUniforms.uBoxMin.value.set(-3, 0, -3);
+      boxUniforms.uBoxMax.value.set(3, 3.95, 3);
+      boxUniforms.uProbePos.value.copy(ROOM_PROBE_POS);
       boxUniforms.uBoxOn.value = 1;
     }
     const prevIntensity = this.scene.environmentIntensity;
@@ -648,7 +693,7 @@ export class ProcEnvSystem extends createSystem({}) {
 
     if (procEnv.monke) {
       this.player.getWorldPosition(this.camPos);
-      this.placeLight(this.camPos, 60);
+      this.placeLight(this.camPos, 45);
     }
 
     if (procEnv.dirty && this.frames > 3) {

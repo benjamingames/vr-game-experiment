@@ -11,6 +11,8 @@ import {
   PBRSet,
   brushedMetalSet,
   detailNormal,
+  fabricSet,
+  marbleSet,
   plasterSet,
   rugSet,
   rubberSet,
@@ -139,6 +141,23 @@ export function rug(): MeshStandardMaterial {
   rugCache ??= rugSet();
   const m = withSet(new MeshStandardMaterial(), rugCache, 1.3);
   return m;
+}
+
+let fabricCache: PBRSet | null = null;
+/** Woven upholstery with a soft sheen at grazing angles. */
+export function fabric(color: number): MeshStandardMaterial {
+  fabricCache ??= fabricSet();
+  const base = QUALITY.clearcoat
+    ? new MeshPhysicalMaterial({ sheen: 1, sheenRoughness: 0.6, sheenColor: new Color(color).multiplyScalar(0.5) })
+    : new MeshStandardMaterial();
+  base.color = new Color(color);
+  return withSet(base, fabricCache, 1.4);
+}
+
+let marbleCache: PBRSet | null = null;
+export function marble(): MeshStandardMaterial {
+  marbleCache ??= marbleSet();
+  return withSet(new MeshStandardMaterial(), marbleCache, 0.4);
 }
 
 export function skylightGlass(): MeshStandardMaterial {

@@ -577,6 +577,57 @@ void surf( vec2 uv, out vec3 c, out float h, out float r, out float m ) {
   );
 }
 
+/** Upholstery: a basket-weave linen with slubs and fuzz. */
+export function fabricSet(seed = 101): PBRSet {
+  return buildSet(
+    MID,
+    6,
+    /* glsl */ `
+uniform float uSeed;
+void surf( vec2 uv, out vec3 c, out float h, out float r, out float m ) {
+  vec2 g = uv * 150.0;
+  vec2 f = fract( g );
+  float warpT = mod( floor( g.x ) + floor( g.y ), 2.0 );
+  float thread = mix( sin( f.x * 3.14159 ), sin( f.y * 3.14159 ), warpT );
+  float slub = fbm( vec2( uv.x * 30.0, uv.y * 400.0 ), vec2( 30.0, 400.0 ), 3, uSeed );
+  float slub2 = fbm( vec2( uv.x * 400.0, uv.y * 30.0 ), vec2( 400.0, 30.0 ), 3, uSeed + 5.0 );
+  float fuzz = fbm( uv * 700.0, vec2( 700.0 ), 2, uSeed + 9.0 );
+  float tone = fbm( uv * 5.0, vec2( 5.0 ), 3, uSeed + 2.0 );
+  float v = 0.78 + thread * 0.16 + ( mix( slub, slub2, warpT ) - 0.5 ) * 0.22 + ( fuzz - 0.5 ) * 0.1 + ( tone - 0.5 ) * 0.06;
+  c = vec3( v );
+  h = thread * 0.8 + fuzz * 0.3 + slub * 0.2;
+  r = 0.96;
+  m = 0.0;
+}`,
+    { uSeed: { value: seed } },
+  );
+}
+
+/** Honed marble slab: soft clouding, bold and hairline veins, no joints. */
+export function marbleSet(seed = 111): PBRSet {
+  return buildSet(
+    BIG,
+    1.2,
+    /* glsl */ `
+uniform float uSeed;
+void surf( vec2 uv, out vec3 c, out float h, out float r, out float m ) {
+  float wx = fbm( uv * 3.0, vec2( 3.0 ), 5, uSeed + 3.0 ) * 3.0;
+  float a = fbm( uv * 4.0 + wx * vec2( 1.0, 0.6 ), vec2( 64.0 ), 7, uSeed );
+  float vein = pow( 1.0 - abs( 2.0 * a - 1.0 ), 10.0 );
+  float b = fbm( uv * 11.0 + wx * 0.6, vec2( 64.0 ), 6, uSeed + 30.0 );
+  float hair = pow( 1.0 - abs( 2.0 * b - 1.0 ), 26.0 );
+  float cloud = fbm( uv * 2.0, vec2( 2.0 ), 4, uSeed + 7.0 );
+  float grain = fbm( uv * 600.0, vec2( 600.0 ), 2, uSeed + 11.0 );
+  float g = 0.9 + ( cloud - 0.5 ) * 0.1 - vein * 0.32 - hair * 0.14 + ( grain - 0.5 ) * 0.02;
+  c = vec3( g, g * 0.992, g * 0.975 ) + vec3( 0.03, 0.015, -0.01 ) * vein;
+  h = 1.0 - vein * 0.15 - hair * 0.1;
+  r = 0.22 + vein * 0.12 + grain * 0.05;
+  m = 0.0;
+}`,
+    { uSeed: { value: seed } },
+  );
+}
+
 let detailCache: DataTexture | null = null;
 /** Fine "orange peel" micro-normal shared by the moulded-plastic toys. */
 export function detailNormal(): DataTexture {

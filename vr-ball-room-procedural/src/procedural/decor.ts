@@ -40,7 +40,7 @@ function rng(seed: number) {
   };
 }
 
-function lathe(pts: Array<[number, number]>, segs = 40) {
+export function lathe(pts: Array<[number, number]>, segs = 40) {
   return new LatheGeometry(pts.map(([r, y]) => new Vector2(r, y)), QUALITY.high ? segs : segs / 2);
 }
 
@@ -175,7 +175,7 @@ function buildCove(root: Group) {
 
 // ---- Plants ---------------------------------------------------------------------------
 
-function buildPlant(height: number, seed: number, chrome: boolean): Group {
+export function buildPlant(height: number, seed: number, chrome: boolean): Group {
   const g = new Group();
   const r = rng(seed);
   const potH = 0.34;
@@ -283,7 +283,7 @@ function buildPlant(height: number, seed: number, chrome: boolean): Group {
 
 const BOOK_COLORS = [0xe9e4d8, 0xd8d2c4, 0x2b2c30, 0x40454d, 0x8a6a4a, 0x6f7f72, 0xb9a48a, 0x1f2a36, 0x7a3b32, 0xc9c5bb];
 
-function artTexture(seed: number): CanvasTexture {
+export function artTexture(seed: number): CanvasTexture {
   const r = rng(seed);
   const c = document.createElement('canvas');
   c.width = 384;
@@ -313,7 +313,7 @@ function artTexture(seed: number): CanvasTexture {
   return t;
 }
 
-function vase(kind: number): Mesh {
+export function vase(kind: number): Mesh {
   const shapes: Array<Array<[number, number]>> = [
     [[0, 0], [0.04, 0], [0.062, 0.03], [0.07, 0.08], [0.055, 0.13], [0.022, 0.17], [0.018, 0.2], [0.026, 0.215], [0.02, 0.215], [0.014, 0.2], [0, 0.2]],
     [[0, 0], [0.03, 0], [0.036, 0.01], [0.03, 0.06], [0.045, 0.12], [0.05, 0.19], [0.04, 0.25], [0.03, 0.27], [0.034, 0.285], [0.027, 0.285], [0, 0.27]],
