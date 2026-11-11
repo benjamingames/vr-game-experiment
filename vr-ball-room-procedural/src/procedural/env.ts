@@ -524,7 +524,7 @@ export class ProcEnvSystem extends createSystem({}) {
     dl.shadow.map?.dispose();
     dl.shadow.map = null as unknown as typeof dl.shadow.map;
     dl.shadow.bias = -0.0003;
-    dl.shadow.normalBias = 0.025;
+    dl.shadow.normalBias = 0.045;
     dl.shadow.radius = QUALITY.high ? 3.5 : 2.5;
 
     this.beams = buildBeams(this.L);
