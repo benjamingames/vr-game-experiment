@@ -117,7 +117,13 @@ function staticBox(
   color: number,
   castShadow = true,
 ): Entity {
-  const mesh = new Mesh(new BoxGeometry(...size), mat(color));
+  // Brown-toned blocks (lane, rails, stands) are real varnished wood; the rest stay moulded plastic
+  const tone = new Color(color);
+  const woody = tone.r > tone.g * 1.15 && tone.g > tone.b * 1.15 && tone.r > 0.06;
+  const material = woody
+    ? oak('#000000', `#${tone.getHexString()}`, 1, Math.max(1, Math.round(Math.max(...size) / 1.5)), 0.36, size[0] > 0.5 ? 4 : 0)
+    : mat(color);
+  const mesh = new Mesh(new BoxGeometry(...size), material);
   mesh.position.set(...pos);
   mesh.castShadow = castShadow;
   mesh.receiveShadow = true;
