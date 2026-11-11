@@ -22,6 +22,7 @@ import {
   SphereGeometry as PlainSphere,
   TorusGeometry,
   Vector2,
+  Vector3,
 } from '@iwsdk/core';
 import { QUALITY } from './quality.js';
 
@@ -463,4 +464,160 @@ export function detailCar(chassis: Mesh, w: number, h: number, d: number) {
   for (const s of [-1, 1]) add(new PlainBox(w * 0.07, 0.001, d * 0.24), white, s * w * 0.07, h * 0.241, -d * 0.36);
   add(new PlainCylinder(0.0009, 0.0012, 0.09, 6), dark, w * 0.3, h * 0.6 + 0.02, d * 0.2);
   add(new PlainSphere(0.003, 10, 8), new MeshStandardMaterial({ color: new Color(0xff3b30), roughness: 0.3 }), w * 0.3, h * 0.6 + 0.066, d * 0.2);
+}
+
+// ---- Toy stations -------------------------------------------------------------------
+
+/** Classic bowling-pin silhouette (belly, neck, crown) centred on the origin. */
+export function pinGeometry(R: number, H: number): LatheGeometry {
+  const f: Array<[number, number]> = [
+    [0, 0], [0.5, 0], [0.62, 0.02], [0.85, 0.12], [1, 0.27], [0.97, 0.38], [0.78, 0.52],
+    [0.52, 0.64], [0.43, 0.72], [0.46, 0.8], [0.56, 0.87], [0.58, 0.92], [0.5, 0.97], [0.3, 0.995], [0, 1],
+  ];
+  return lathe(f.map(([r, y]) => [r * R, (y - 0.5) * H]), 40);
+}
+
+/** Flared bell with a rolled lip, same extents as a 0.16 tall, 0.12 radius cone. */
+export function bellGeometry(): LatheGeometry {
+  return lathe(
+    [[0.112, -0.08], [0.12, -0.076], [0.118, -0.066], [0.1, -0.045], [0.082, 0], [0.07, 0.04],
+     [0.052, 0.068], [0.028, 0.081], [0.012, 0.084], [0.012, 0.095], [0, 0.097]],
+    48,
+  );
+}
+
+export function brass(): MeshStandardMaterial {
+  const m = metalMat(0xd9b24a, 0.2);
+  m.side = DoubleSide;
+  return m;
+}
+
+/** Three drilled finger holes near the top of a bowling ball of radius r. */
+export function fingerHoles(r: number): Group {
+  const g = new Group();
+  const dark = new MeshStandardMaterial({ color: new Color(0x05070a), roughness: 0.9 });
+  const spots: Array<[number, number]> = [[-0.2, 0.32], [0.2, 0.32], [0, -0.08]];
+  for (const [ax, az] of spots) {
+    const hole = new Mesh(new PlainCylinder(r * 0.11, r * 0.11, r * 0.12, 20), dark);
+    const nx = Math.sin(ax);
+    const nz = Math.sin(az);
+    const ny = Math.sqrt(Math.max(0, 1 - nx * nx - nz * nz));
+    hole.position.set(nx * r * 0.955, ny * r * 0.955, nz * r * 0.955);
+    hole.lookAt(0, 0, 0);
+    hole.rotateX(Math.PI / 2);
+    g.add(hole);
+  }
+  return g;
+}
+
+/** Eyes, ears, teeth, whiskers and a hat brim for a whack-a-mole (face points to +X). */
+export function moleFace(): Group {
+  const g = new Group();
+  const eye = new MeshPhysicalMaterial({ color: new Color(0x0a0a0c), roughness: 0.05, clearcoat: 1 });
+  const fur = new MeshStandardMaterial({ color: new Color(0x6f3f18), roughness: 0.9 });
+  const white = new MeshStandardMaterial({ color: new Color(0xf7f3e8), roughness: 0.3 });
+  const yellow = new MeshStandardMaterial({ color: new Color(0xffd23f), roughness: 0.35 });
+  for (const s of [-1, 1]) {
+    const e = new Mesh(new PlainSphere(0.0075, 16, 12), eye);
+    e.position.set(0.043, 0.074, s * 0.02);
+    g.add(e);
+    const glint = new Mesh(new PlainSphere(0.002, 8, 6), white);
+    glint.position.set(0.049, 0.077, s * 0.02 + 0.002);
+    g.add(glint);
+    const ear = new Mesh(new PlainSphere(0.014, 14, 10), fur);
+    ear.scale.x = 0.5;
+    ear.position.set(0.005, 0.078, s * 0.05);
+    g.add(ear);
+    for (let w = 0; w < 3; w++) {
+      const wh = new Mesh(new PlainCylinder(0.0005, 0.0005, 0.035, 4), eye);
+      wh.rotation.x = Math.PI / 2 + (w - 1) * 0.22;
+      wh.position.set(0.05, 0.05 + (w - 1) * 0.004, s * 0.028);
+      g.add(wh);
+    }
+  }
+  const teeth = new Mesh(new BoxGeometry(0.004, 0.013, 0.015), white);
+  teeth.position.set(0.049, 0.036, 0);
+  g.add(teeth);
+  const brim = new Mesh(new TorusGeometry(0.054, 0.005, 10, 36), yellow);
+  brim.rotation.x = Math.PI / 2;
+  brim.position.y = 0.096;
+  g.add(brim);
+  return g;
+}
+
+/** Chrome fixing studs for a xylophone bar that runs along X. */
+export function barStuds(len: number): Group {
+  const g = new Group();
+  const chrome = metalMat(0xe6ebf0, 0.15);
+  for (const s of [-1, 1]) {
+    const stud = new Mesh(new PlainSphere(0.0055, 14, 10), chrome);
+    stud.scale.y = 0.6;
+    stud.position.set(s * len * 0.37, 0.0112, 0);
+    g.add(stud);
+  }
+  return g;
+}
+
+/** Steel tube rim and a diamond-mesh nylon net for the basketball hoop (world coordinates). */
+export function hoopDetail(x: number, y: number, z: number, r: number): Group {
+  const g = new Group();
+  const rim = shadowed(new Mesh(new TorusGeometry(r, 0.011, 14, 72), metalMat(0xff5a1f, 0.35, 0.8)));
+  rim.rotation.x = Math.PI / 2;
+  rim.position.set(x, y, z);
+  g.add(rim);
+  const nylon = new MeshStandardMaterial({ color: new Color(0xf4f4f0), roughness: 0.8 });
+  const n = 16;
+  const drop = 0.3;
+  const up = new Vector3(0, 1, 0);
+  const a0 = new Vector3();
+  const a1 = new Vector3();
+  for (let i = 0; i < n; i++) {
+    for (const twist of [-1, 1]) {
+      const t0 = (i / n) * Math.PI * 2;
+      const t1 = t0 + twist * 1.05;
+      a0.set(x + Math.cos(t0) * r, y - 0.012, z + Math.sin(t0) * r);
+      a1.set(x + Math.cos(t1) * r * 0.5, y - drop, z + Math.sin(t1) * r * 0.5);
+      const len = a0.distanceTo(a1);
+      const s = new Mesh(new PlainCylinder(0.0022, 0.0022, len, 5), nylon);
+      s.position.copy(a0).add(a1).multiplyScalar(0.5);
+      s.quaternion.setFromUnitVectors(up, a1.clone().sub(a0).normalize());
+      g.add(s);
+    }
+  }
+  return g;
+}
+
+/** Coil spring wrapped around the base of a rod (rod along +Y from the origin). */
+export function coilSpring(radius: number, height: number, turns: number): Mesh {
+  const pts: number[] = [];
+  const idx: number[] = [];
+  const seg = turns * 24;
+  const tube = 0.006;
+  const ring = 8;
+  for (let i = 0; i <= seg; i++) {
+    const t = i / seg;
+    const a = t * turns * Math.PI * 2;
+    const cx = Math.cos(a) * radius;
+    const cz = Math.sin(a) * radius;
+    const cy = t * height;
+    for (let j = 0; j < ring; j++) {
+      const b = (j / ring) * Math.PI * 2;
+      const rr = radius + Math.cos(b) * tube;
+      pts.push(Math.cos(a) * rr, cy + Math.sin(b) * tube, Math.sin(a) * rr);
+      if (i < seg) {
+        const p = i * ring + j;
+        const q = i * ring + ((j + 1) % ring);
+        idx.push(p, p + ring, q, q, p + ring, q + ring);
+      }
+    }
+    void cx;
+    void cz;
+  }
+  const geo = new BufferGeometry();
+  geo.setAttribute('position', new Float32BufferAttribute(pts, 3));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  const m = metalMat(0xdfe5ec, 0.2);
+  m.side = DoubleSide;
+  return shadowed(new Mesh(geo, m));
 }

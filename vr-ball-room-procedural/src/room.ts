@@ -61,7 +61,15 @@ import {
   buildTable,
   canGeometry,
   canLabel,
+  barStuds,
+  bellGeometry,
+  brass,
   canLid,
+  coilSpring,
+  fingerHoles,
+  hoopDetail,
+  moleFace,
+  pinGeometry,
   detailCar,
   detailDartboard,
   detailedDart,
@@ -1929,6 +1937,9 @@ function buildFiveToyStations(world: World) {
   const hoopPost = new Mesh(new CylinderGeometry(0.048, 0.058, 2.12, 16), mat(0x2b303a, 0.5));
   hoopPost.position.set(-2.9, 1.06, bbZ);
   world.createTransformEntity(hoopPost);
+  world.createTransformEntity(
+    hoopDetail(HOOP_RIM_POS.x, HOOP_RIM_POS.y, HOOP_RIM_POS.z, HOOP_RIM_POS.radius),
+  );
   // Red shooter's square on backboard
   const shooterBox = new Mesh(
     new BoxGeometry(0.01, 0.28, 0.38),
@@ -1980,7 +1991,7 @@ function buildFiveToyStations(world: World) {
   const bballHome: [number, number, number] = [-2.15, 0.72 + bballR + 0.01, bbZ + 0.65];
   const bballMesh = new Mesh(
     new SphereGeometry(bballR, 28, 18),
-    mat(0xe85d04, 0.45),
+    rubberBall(0xe85d04),
   );
   bballMesh.position.set(...bballHome);
   bballMesh.castShadow = true;
@@ -2021,19 +2032,19 @@ function buildFiveToyStations(world: World) {
   pinRows.forEach((count, rIdx) => {
     for (let i = 0; i < count; i++) {
       const pinBody = new Mesh(
-        new CylinderGeometry(pinR * 0.65, pinR, pinH, 20),
+        pinGeometry(pinR, pinH),
         mat(0xfafafa, 0.3),
       );
       // Red stripe around the neck of each bowling pin
       const stripe = new Mesh(
-        new CylinderGeometry(pinR * 0.74, pinR * 0.78, 0.032, 18),
+        new CylinderGeometry(pinR * 0.475, pinR * 0.53, 0.03, 32),
         mat(0xd62828, 0.35),
       );
       stripe.position.set(0, pinH * 0.16, 0);
       pinBody.add(stripe);
 
       const pinHead = new Mesh(
-        new SphereGeometry(pinR * 0.72, 16, 12),
+        new SphereGeometry(pinR * 0.02, 6, 4),
         mat(0xfafafa, 0.3),
       );
       pinHead.position.set(0, pinH * 0.42, 0);
@@ -2072,6 +2083,7 @@ function buildFiveToyStations(world: World) {
     new SphereGeometry(bowlR, 28, 18),
     mat(0x1d3557, 0.2),
   );
+  bowlBall.add(fingerHoles(bowlR));
   bowlBall.position.set(...bowlHome);
   bowlBall.castShadow = true;
   const bowlEntity = world.createTransformEntity(bowlBall);
@@ -2117,6 +2129,7 @@ function buildFiveToyStations(world: World) {
       new BoxGeometry(barLen, 0.022, 0.068),
       mat(noteColors[i], 0.25),
     );
+    barMesh.add(barStuds(barLen));
     barMesh.position.set(xyloX, barY, barZ);
     barMesh.castShadow = true;
     const be = world.createTransformEntity(barMesh);
@@ -2133,13 +2146,13 @@ function buildFiveToyStations(world: World) {
   // Two grabbable Xylophone Mallets on the front edge of the xylophone stand
   [-0.12, 0.12].forEach((zOff) => {
     const handle = new Mesh(
-      new CylinderGeometry(0.01, 0.01, 0.24, 12),
-      mat(0xd9a05b, 0.5),
+      new CylinderGeometry(0.01, 0.008, 0.24, 12),
+      oak('#8a5a2a', '#d9a05b', 1, 1, 0.45),
     );
     handle.geometry.rotateZ(Math.PI / 2);
     const headBall = new Mesh(
       new SphereGeometry(0.026, 16, 12),
-      mat(0xff3b30, 0.35),
+      rubberBall(0xff3b30),
     );
     headBall.position.set(-0.12, 0, 0);
     handle.add(headBall);
@@ -2239,6 +2252,7 @@ function buildFiveToyStations(world: World) {
     moleBody.add(moleNose);
 
     const baseY = wamH - 0.04;
+    moleBody.add(moleFace());
     moleBody.position.set(mx, baseY, mz);
     const me = world.createTransformEntity(moleBody);
     me.addComponent(RayInteractable);
@@ -2305,10 +2319,11 @@ function buildFiveToyStations(world: World) {
   );
   bagRod.position.set(0, 0.59, 0);
   bagPivot.add(bagRod);
+  bagPivot.add(coilSpring(0.03, 0.22, 7));
 
   const pearBag = new Mesh(
     new SphereGeometry(0.16, 24, 18),
-    mat(0xc1121f, 0.35),
+    rubberBall(0xc1121f),
   );
   pearBag.scale.set(1.0, 1.28, 1.0);
   pearBag.position.set(0, 1.24, 0);
@@ -2355,8 +2370,8 @@ function buildFiveToyStations(world: World) {
 
   // Golden Bell at the top of the tower
   const bell = new Mesh(
-    new CylinderGeometry(0.04, 0.12, 0.16, 24),
-    mat(0xffd166, 0.2),
+    bellGeometry(),
+    brass(),
   );
   bell.name = 'carnival-bell';
   bell.position.set(0, bellY - 0.18, 0.11);
