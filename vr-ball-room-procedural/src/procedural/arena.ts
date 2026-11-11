@@ -28,17 +28,16 @@ import {
 } from '@iwsdk/core';
 import { QUALITY } from './quality.js';
 import { timeUniform } from './env.js';
+import { oak } from './materials.js';
 import {
   PBRSet,
   barkSet,
-  buildSet,
   endGrainSet,
-  fbm,
   fbm3,
+  foliageSet,
   groundSet,
   retile,
   rockSet,
-  woodSet,
 } from './textures.js';
 
 const STUMP = { rin: 3.45, rout: 4.25, segs: 48, doorHalf: 0.21, doorTop: 2.7 };
@@ -142,20 +141,6 @@ function windy(m: MeshStandardMaterial, body: string) {
   m.customProgramCacheKey = () => 'wind:' + m.name;
 }
 
-function foliageSet(): PBRSet {
-  return buildSet(QUALITY.texSize, 7, (u, v, o) => {
-    const cell = fbm(u * 24, v * 24, 24, 24, 3, 61);
-    const leaf = 1 - Math.abs(2 * fbm(u * 48, v * 48, 48, 48, 2, 63) - 1);
-    const gap = sstep(0.3, 0.42, cell);
-    const t = leaf * 0.7 + cell * 0.3;
-    o.r = (0.05 + t * 0.2) * (0.35 + 0.65 * gap);
-    o.g = (0.16 + t * 0.4) * (0.35 + 0.65 * gap);
-    o.b = (0.03 + t * 0.1) * (0.35 + 0.65 * gap);
-    o.h = t * gap;
-    o.rough = 0.62 + (1 - t) * 0.25;
-  });
-}
-
 function displacedBlob(ws: number, hs: number, amp: number, freq: number, seed: number) {
   const g = new SphereGeometry(1, ws, hs);
   const p = g.attributes.position;
@@ -182,11 +167,9 @@ export function buildProceduralArena(): Group {
 
   const barkTex = barkSet();
   const bark = pbrMat('bark', retile(barkTex, 3, 2));
-  const innerWood = pbrMat(
-    'stumpwood',
-    retile(woodSet('#4a2c14', '#a8743c', { seed: 5, rings: 9, rough: 0.7 }), 1.5, 1),
-    { side: DoubleSide },
-  );
+  const innerWood = oak('#4a2c14', '#a8743c', 1.5, 1, 0.7);
+  innerWood.name = 'stumpwood';
+  innerWood.side = DoubleSide;
   const rock = pbrMat('rock', retile(rockSet(), 2, 2));
   const leaves = pbrMat('leaves-canopy', retile(foliageSet(), 4, 3));
   leaves.normalScale.set(2, 2);

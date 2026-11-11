@@ -1,8 +1,6 @@
 import {
-  BoxGeometry,
   CanvasTexture,
   Color,
-  CylinderGeometry,
   DirectionalLight,
   DistanceGrabbable,
   DoubleSide,
@@ -30,7 +28,6 @@ import {
   Quaternion,
   RayInteractable,
   RepeatWrapping,
-  SphereGeometry,
   Vector3,
   World,
   createSystem,
@@ -57,6 +54,16 @@ import {
 } from './ball-components.js';
 import { buildMaze, mazeHooks } from './maze.js';
 import { buildProceduralArena } from './procedural/arena.js';
+import {
+  BoxGeometry,
+  CylinderGeometry,
+  SphereGeometry,
+  buildTable,
+  canGeometry,
+  canLabel,
+  canLid,
+} from './procedural/geometry.js';
+import { setTextureRenderer } from './procedural/textures.js';
 import { buildProceduralEnvironment, procEnv } from './procedural/env.js';
 import {
   canMetal,
@@ -117,6 +124,7 @@ function staticBox(
 export function buildRoom(world: World) {
   const { depth: D } = ROOM;
 
+  setTextureRenderer(world.renderer);
   // Procedural sky dome, lamps, light shafts (all shader / code generated)
   buildProceduralEnvironment(world);
 
@@ -130,7 +138,17 @@ export function buildRoom(world: World) {
     [0, TABLE.height / 2, TABLE.z],
     0x6b4a2f,
   );
-  (tableEntity.object3D as Mesh).material = oak('#5e3c1f', '#b07a48', 1, 1, 0.38, 4);
+  {
+    // Swap the plain block for a modelled table (the box collider is unchanged)
+    const tableMesh = tableEntity.object3D as Mesh;
+    const legWood = oak('#5e3c1f', '#b07a48', 1, 1, 0.4);
+    const topWood = oak('#5e3c1f', '#b07a48', 1, 2, 0.34, 4, Math.PI / 2);
+    const table = buildTable(TABLE.width, TABLE.height, TABLE.depth, legWood, topWood);
+    tableMesh.geometry.dispose();
+    tableMesh.geometry = table.top;
+    tableMesh.material = topWood;
+    tableMesh.add(table.parts);
+  }
   const tableTop = TABLE.height;
 
   // Balls on the back-left of the table: squeeze (grip) to grab up close, or point + trigger from afar
@@ -214,9 +232,10 @@ export function buildRoom(world: World) {
   rows.forEach((count, row) => {
     for (let i = 0; i < count; i++) {
       const can = new Mesh(
-        new CylinderGeometry(canR, canR, canH, 32),
-        canMetal(row === 2 ? 0xff8c1a : 0x3fbf7f),
+        canGeometry(canR, canH),
+        canMetal(row === 2 ? 0xff8c1a : 0x3fbf7f, canLabel(row === 2 ? 'ZAP!' : 'FIZZ')),
       );
+      can.add(canLid(canR, canH, canMetal(0xdfe3e8)));
       const home: [number, number, number] = [
         (i - (count - 1) / 2) * (canR * 2 + 0.01),
         canH / 2 + row * canH + 0.001,

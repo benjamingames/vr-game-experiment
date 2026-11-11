@@ -5,7 +5,8 @@ audio. Everything is generated at load time by code in `src/procedural/`:
 
 | File | What it generates |
 |---|---|
-| `textures.ts` | PBR texture sets (albedo + normal + roughness/metalness) from noise: oak, marble tiles, brushed metal, bark, end grain, ground, rock |
+| `textures.ts` | PBR texture sets (albedo + normal + roughness/metalness) rendered by noise shaders on the GPU at up to 2048px: oak, marble tiles, brushed metal, bark, end grain, ground, rock, foliage, pebbled rubber |
+| `geometry.ts` | Detailed shapes: rounded-edge boxes and smooth cylinders/spheres used by every object, the modelled table (turned legs, apron, drawer, brass pulls), drinks cans with lids, tabs and printed labels |
 | `materials.ts` | Physically based materials (clear coat, sheen, glass) built on those sets |
 | `env.ts` | Sky shader (sun, moon, stars, moving clouds), reflection probe with box-projected reflections and one bounce of indirect light, light shafts, dust, chandelier and sconces |
 | `arena.ts` | "Hollow Grove", the Monke Map: terrain, hollow stump, climbable trees, boulders, instanced grass with wind |
