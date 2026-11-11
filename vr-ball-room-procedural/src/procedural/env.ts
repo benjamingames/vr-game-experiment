@@ -523,7 +523,7 @@ export class ProcEnvSystem extends createSystem({}) {
     dl.shadow.mapSize.set(QUALITY.shadowMapSize, QUALITY.shadowMapSize);
     dl.shadow.map?.dispose();
     dl.shadow.map = null as unknown as typeof dl.shadow.map;
-    dl.shadow.bias = -0.0003;
+    dl.shadow.bias = -0.0012;
     dl.shadow.normalBias = 0.045;
     dl.shadow.radius = QUALITY.high ? 3.5 : 2.5;
 
