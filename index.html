@@ -1,16 +1,43 @@
 <!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1, shrink-to-fit=no"
-    />
-    <link rel="icon" href="data:," />
-    <title>vr-ball</title>
-  </head>
-  <body style="margin: 0">
-    <div id="scene-container"></div>
-    <script type="module" src="/src/index.ts"></script>
-  </body>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VR Game Experiments</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; background: #0d1117; color: #e6edf3;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    display: flex; flex-direction: column; align-items: center; padding: 48px 20px; }
+  h1 { font-size: clamp(28px, 5vw, 44px); margin: 0 0 8px; }
+  p.sub { color: #9aa7b4; margin: 0 0 36px; text-align: center; max-width: 560px; }
+  .grid { display: grid; gap: 20px; width: 100%; max-width: 760px;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+  a.card { display: block; padding: 24px; border-radius: 14px; text-decoration: none; color: inherit;
+    background: #161b22; border: 2px solid #30363d; transition: border-color .15s, transform .15s; }
+  a.card:hover, a.card:focus-visible { border-color: #58a6ff; transform: translateY(-2px); outline: none; }
+  a.card h2 { margin: 0 0 8px; font-size: 22px; }
+  a.card p { margin: 0; color: #9aa7b4; line-height: 1.45; }
+  .tag { display: inline-block; margin-top: 14px; font-size: 13px; font-weight: 600; color: #58a6ff; }
+  footer { margin-top: 40px; color: #6e7781; font-size: 13px; text-align: center; }
+</style>
+</head>
+<body>
+  <h1>VR Game Experiments</h1>
+  <p class="sub">WebXR games for the Meta Quest 3. Open a game in the Quest Browser and press the headset button to enter VR. They also run on a PC.</p>
+  <div class="grid">
+    <a class="card" href="vr-ball-game/">
+      <h2>VR Ball Room</h2>
+      <p>Throw balls and darts, drive an RC car, play five toy stations, swing around in Monke Mode, and brave the cake maze.</p>
+      <span class="tag">Play &rarr;</span>
+    </a>
+    <a class="card" href="diggingahole/">
+      <h2>A Game About Digging a Hole</h2>
+      <p>Dig in the backyard, sell what you find, upgrade your shovel, and buy a jetpack to fly back out.</p>
+      <span class="tag">Play &rarr;</span>
+    </a>
+  </div>
+  <footer>Add games by dropping a folder in the repo.</footer>
+</body>
 </html>
