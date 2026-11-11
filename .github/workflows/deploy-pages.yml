@@ -3,6 +3,7 @@ name: Deploy to GitHub Pages
 # Every push to main builds vr-ball-game/, copies the other games, and publishes one Pages site:
 #   /                  landing page (index.html)
 #   /vr-ball-game/     built IWSDK app
+#   /vr-ball-room-procedural/  built IWSDK app (asset-free variant)
 #   /diggingahole/     single-file game
 on:
   push:
@@ -39,10 +40,22 @@ jobs:
         working-directory: vr-ball-game
         env:
           NODE_ENV: production
+      - name: Install (procedural)
+        run: npm ci --no-audit --no-fund
+        working-directory: vr-ball-room-procedural
+      - name: Typecheck (procedural)
+        run: npm run typecheck
+        working-directory: vr-ball-room-procedural
+      - name: Build (procedural)
+        run: npm run build
+        working-directory: vr-ball-room-procedural
+        env:
+          NODE_ENV: production
       - name: Assemble site
         run: |
-          mkdir -p _site/vr-ball-game _site/diggingahole
+          mkdir -p _site/vr-ball-game _site/vr-ball-room-procedural _site/diggingahole
           cp -r vr-ball-game/dist/. _site/vr-ball-game/
+          cp -r vr-ball-room-procedural/dist/. _site/vr-ball-room-procedural/
           cp diggingahole/index.html _site/diggingahole/index.html
           cp index.html _site/index.html
           touch _site/.nojekyll

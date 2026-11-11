@@ -8,12 +8,13 @@ Each game lives in its own folder and is published together on GitHub Pages.
 | Game | Folder | Play |
 |---|---|---|
 | **VR Ball Room** (the original concept: throwing toys, RC car, toy stations, Monke Mode, and the cake maze) | [`vr-ball-game/`](vr-ball-game/) | [/vr-ball-game/](https://benjamingames.github.io/vr-game-experiment/vr-ball-game/) |
+| **VR Ball Room: Procedural** (same game with no asset files: all textures, models, sky and lighting are generated in code) | [`vr-ball-room-procedural/`](vr-ball-room-procedural/) | [/vr-ball-room-procedural/](https://benjamingames.github.io/vr-game-experiment/vr-ball-room-procedural/) |
 | **A Game About Digging a Hole** (single-file game) | [`diggingahole/`](diggingahole/) | [/diggingahole/](https://benjamingames.github.io/vr-game-experiment/diggingahole/) |
 
 ## How publishing works
 
 Every push to `main` runs `.github/workflows/deploy-pages.yml`, which builds
-`vr-ball-game/`, copies `diggingahole/` as-is, adds the landing page (`index.html`),
+`vr-ball-game/` and `vr-ball-room-procedural/`, copies `diggingahole/` as-is, adds the landing page (`index.html`),
 and publishes everything as one Pages site.
 
 ## Adding another game
