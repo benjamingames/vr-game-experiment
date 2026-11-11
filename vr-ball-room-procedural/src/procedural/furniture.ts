@@ -7,6 +7,7 @@
 import {
   BoxGeometry,
   BufferGeometry,
+  CanvasTexture,
   Color,
   CylinderGeometry,
   DoubleSide,
@@ -17,6 +18,8 @@ import {
   Mesh,
   MeshPhysicalMaterial,
   MeshStandardMaterial,
+  PlaneGeometry,
+  SRGBColorSpace,
   SphereGeometry,
   TorusGeometry,
   Vector2,
@@ -170,7 +173,22 @@ export function floorLamp(): Group {
   // Shade: glowing woven linen, open top and bottom
   const linen = fabric(0xf3e7d2);
   linen.emissive = new Color(0xffc98a);
-  linen.emissiveIntensity = 0.9;
+  linen.emissiveIntensity = 1.1;
+  {
+    // Light through cloth: hottest level with the bulb, falling off toward both rims
+    const c = document.createElement('canvas');
+    c.width = 4;
+    c.height = 64;
+    const x = c.getContext('2d')!;
+    const grad = x.createLinearGradient(0, 64, 0, 0);
+    grad.addColorStop(0, '#6f6f6f');
+    grad.addColorStop(0.32, '#ffffff');
+    grad.addColorStop(0.55, '#c8c8c8');
+    grad.addColorStop(1, '#5c5c5c');
+    x.fillStyle = grad;
+    x.fillRect(0, 0, 4, 64);
+    linen.emissiveMap = new CanvasTexture(c);
+  }
   linen.side = DoubleSide;
   linen.userData.noBake = true;
   const shade = put(g, new Mesh(new CylinderGeometry(0.17, 0.2, 0.3, 56, 1, true), linen), 0, 1.56, 0);
@@ -275,4 +293,104 @@ export function deskSet(): Group {
   g.add(keys);
   void Vector3;
   return g;
+}
+
+/** A lit monitor image: a desktop with an editor window, a chart and a dock. Faces +Z; w x h metres. */
+export function screenImage(w: number, h: number): Mesh {
+  const c = document.createElement('canvas');
+  c.width = 1024;
+  c.height = Math.round((1024 * h) / w);
+  const x = c.getContext('2d')!;
+  const W = c.width;
+  const H = c.height;
+  const bg = x.createLinearGradient(0, 0, W, H);
+  bg.addColorStop(0, '#22344f');
+  bg.addColorStop(0.55, '#3d5d7c');
+  bg.addColorStop(1, '#c58a62');
+  x.fillStyle = bg;
+  x.fillRect(0, 0, W, H);
+  x.fillStyle = 'rgba(12,14,18,0.55)';
+  x.fillRect(0, 0, W, 22);
+  const win = (px: number, py: number, pw: number, ph: number, fill: string) => {
+    x.fillStyle = 'rgba(0,0,0,0.28)';
+    x.beginPath();
+    x.roundRect(px + 4, py + 8, pw, ph, 10);
+    x.fill();
+    x.fillStyle = fill;
+    x.beginPath();
+    x.roundRect(px, py, pw, ph, 10);
+    x.fill();
+    x.fillStyle = 'rgba(255,255,255,0.08)';
+    x.fillRect(px, py + 26, pw, 1);
+    ['#ee6a5f', '#f5bd4f', '#61c454'].forEach((col, i) => {
+      x.fillStyle = col;
+      x.beginPath();
+      x.arc(px + 16 + i * 16, py + 13, 5, 0, Math.PI * 2);
+      x.fill();
+    });
+  };
+  // Editor window with indented lines of "code"
+  win(50, 50, 560, H - 150, '#1d2026');
+  const inks = ['#7fb4e6', '#d8dee9', '#c792ea', '#9ccc8f', '#e0b072'];
+  let seed = 9;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < Math.floor((H - 210) / 15); i++) {
+    let px = 72 + Math.floor(rnd() * 4) * 18;
+    const y = 90 + i * 15;
+    x.fillStyle = '#4a505c';
+    x.fillRect(58, y, 8, 5);
+    if (rnd() < 0.12) continue;
+    const n = 1 + Math.floor(rnd() * 5);
+    for (let k = 0; k < n; k++) {
+      const len = 18 + rnd() * 90;
+      x.fillStyle = inks[Math.floor(rnd() * inks.length)];
+      x.fillRect(px, y, len, 5);
+      px += len + 8;
+      if (px > 560) break;
+    }
+  }
+  // Chart window
+  win(640, 80, 340, 230, '#f4f2ee');
+  x.strokeStyle = '#d9d5cd';
+  x.lineWidth = 1;
+  for (let i = 0; i < 5; i++) {
+    x.beginPath();
+    x.moveTo(660, 130 + i * 38);
+    x.lineTo(960, 130 + i * 38);
+    x.stroke();
+  }
+  x.strokeStyle = '#2f6fb2';
+  x.lineWidth = 3;
+  x.beginPath();
+  for (let i = 0; i <= 20; i++) x.lineTo(660 + i * 15, 260 - i * 5 - Math.sin(i * 0.9) * 22 - rnd() * 10);
+  x.stroke();
+  // Notes window
+  win(690, 340, 290, H - 450, '#fbf6e6');
+  x.fillStyle = '#6d675c';
+  for (let i = 0; i < Math.floor((H - 520) / 16); i++) x.fillRect(708, 384 + i * 16, 90 + rnd() * 160, 4);
+  // Dock
+  x.fillStyle = 'rgba(240,240,245,0.28)';
+  x.beginPath();
+  x.roundRect(W / 2 - 190, H - 62, 380, 50, 14);
+  x.fill();
+  ['#3b82f6', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#e5e7eb', '#0ea5e9'].forEach((col, i) => {
+    x.fillStyle = col;
+    x.beginPath();
+    x.roundRect(W / 2 - 172 + i * 50, H - 54, 34, 34, 8);
+    x.fill();
+  });
+  const tex = new CanvasTexture(c);
+  tex.colorSpace = SRGBColorSpace;
+  tex.anisotropy = QUALITY.anisotropy;
+  const m = new MeshStandardMaterial({
+    color: new Color(0x000000),
+    emissive: new Color(0xffffff),
+    emissiveMap: tex,
+    emissiveIntensity: 0.9,
+    roughness: 0.25,
+  });
+  m.userData.noBake = true;
+  const mesh = new Mesh(new PlaneGeometry(w, h), m);
+  mesh.userData.noBake = true;
+  return mesh;
 }

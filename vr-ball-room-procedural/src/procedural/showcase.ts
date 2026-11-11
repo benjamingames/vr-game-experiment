@@ -31,7 +31,7 @@ import {
 import { BoxOpts, LightBake } from './bake.js';
 import { artTexture, buildPlant, vase } from './decor.js';
 import { EnvZone, procEnv } from './env.js';
-import { deskSet, floorLamp, officeChair, sofaCushions } from './furniture.js';
+import { deskSet, floorLamp, officeChair, screenImage, sofaCushions } from './furniture.js';
 import { fabric, glossFloor, marble, oak, plaster, rug } from './materials.js';
 import { QUALITY } from './quality.js';
 
@@ -253,7 +253,8 @@ export function buildShowcase(world: World) {
   for (const x of [-3.2, -2.0]) B(dark, x - 0.002, 2.12, 1.318, x + 0.002, H, 1.322, { ...darkO, noOcclude: true });
 
   // ---- Desk (black top, cabinet one side, fluted blade the other) --------------
-  B(dark, -3.7, 0.73, 0.9, -1.5, 0.77, 1.75, darkO);
+  // Black-stained ash top: open grain under a satin lacquer, so it catches the window instead of reading as a void
+  B(oak('#000000', '#4a4540', 1, 1, 0.34), -3.7, 0.73, 0.9, -1.5, 0.77, 1.75, { albedo: [0.07, 0.065, 0.06], uv: [1.4, 1.4] });
   B(cream, -3.64, 0.03, 0.96, -2.86, 0.72, 1.7, creamO);
   B(dark, -3.62, 0, 0.98, -2.88, 0.03, 1.68, darkO);
   B(dark, -3.26, 0.05, 0.955, -3.254, 0.7, 0.96, darkO);
@@ -273,6 +274,10 @@ export function buildShowcase(world: World) {
   props.add(chair);
   bake.addOccluder(P(-2.86, 0.42, 0.28), P(-2.34, 0.55, 0.78), [0.05, 0.05, 0.05], [0, 0, 0]);
   bake.addOccluder(P(-2.84, 0.58, 0.22), P(-2.36, 1.1, 0.3), [0.05, 0.05, 0.05], [0, 0, 0]);
+  const display = screenImage(0.75, 0.45);
+  display.rotation.y = Math.PI;
+  display.position.set(OX - 2.61, 1.18, OZ + 1.5155);
+  root.add(display);
   const desk = deskSet();
   desk.position.set(OX - 2.61, 0.77, OZ + 1.5);
   props.add(desk);

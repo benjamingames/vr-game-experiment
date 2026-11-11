@@ -18,6 +18,7 @@ import {
   Group,
   HalfFloatType,
   HemisphereLight,
+  LatheGeometry,
   Material,
   Mesh,
   MeshStandardMaterial,
@@ -29,6 +30,7 @@ import {
   ShaderMaterial,
   SphereGeometry,
   TorusGeometry,
+  Vector2,
   Vector3,
   WebGLCubeRenderTarget,
   WebGLRenderTarget,
@@ -460,24 +462,36 @@ function buildLamps(root: Group) {
   }
   root.add(chand);
 
-  // Wall sconces: brass backplate and arm, frosted glass shade
+  // Wall sconces: stepped brass rose, swan-neck arm, fitter cup and an opal glass bell shade
+  const turn = (pts: Array<[number, number]>, segs = 40) =>
+    new LatheGeometry(pts.map(([r, y]) => new Vector2(r, y)), QUALITY.high ? segs : 16);
+  const roseG = turn([[0, 0], [0.062, 0], [0.066, 0.004], [0.062, 0.01], [0.046, 0.014], [0.032, 0.02], [0.02, 0.034], [0, 0.036]]);
+  const cupG = turn([[0, 0], [0.012, 0], [0.028, 0.01], [0.034, 0.02], [0.035, 0.03], [0.03, 0.033], [0, 0.033]], 32);
+  const shadeG = turn([
+    [0.028, 0], [0.035, 0.008], [0.045, 0.03], [0.055, 0.062], [0.064, 0.1], [0.07, 0.132], [0.072, 0.136],
+    [0.068, 0.136], [0.06, 0.1], [0.051, 0.062], [0.041, 0.03], [0.03, 0.01],
+  ], 48);
+  const armG = new TorusGeometry(0.07, 0.0065, 10, 28, Math.PI / 2);
   const sconce = (x: number, z: number) => {
     const s = new Group();
-    const sign = x > 0 ? -1 : 1;
-    s.position.set(x, 2.28, z);
-    const plate = new Mesh(new CylinderGeometry(0.06, 0.06, 0.014, 24), brass);
-    plate.rotation.z = Math.PI / 2;
-    s.add(plate);
-    const arm = new Mesh(new CylinderGeometry(0.008, 0.008, 0.1, 8), brass);
-    arm.rotation.z = Math.PI / 2;
-    arm.position.x = sign * 0.05;
+    s.position.set(x, 2.2, z);
+    s.scale.x = x > 0 ? -1 : 1;
+    const rose = new Mesh(roseG, brass);
+    rose.rotation.z = -Math.PI / 2;
+    s.add(rose);
+    const arm = new Mesh(armG, brass);
+    arm.rotation.z = -Math.PI / 2;
+    arm.position.set(0.03, 0.07, 0);
     s.add(arm);
-    const shade = new Mesh(new CylinderGeometry(0.05, 0.036, 0.13, 24), glow);
-    shade.position.set(sign * 0.1, 0.03, 0);
+    const knuckle = new Mesh(new SphereGeometry(0.011, 16, 12), brass);
+    knuckle.position.set(0.03, 0, 0);
+    s.add(knuckle);
+    const cup = new Mesh(cupG, brass);
+    cup.position.set(0.1, 0.066, 0);
+    s.add(cup);
+    const shade = new Mesh(shadeG, glow);
+    shade.position.set(0.1, 0.094, 0);
     s.add(shade);
-    const cap = new Mesh(new CylinderGeometry(0.04, 0.04, 0.012, 24), brass);
-    cap.position.set(sign * 0.1, -0.04, 0);
-    s.add(cap);
     root.add(s);
   };
   for (const z of [-0.35, 1.25]) {

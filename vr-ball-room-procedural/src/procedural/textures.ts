@@ -309,14 +309,14 @@ void surf( vec2 uv, out vec3 c, out float h, out float r, out float m ) {
   float ringc = u * uRings + warp * 1.1 + tint * 9.0;
   float ring = 0.5 + 0.5 * sin( ringc * 6.2831853 );
   ring = mix( ring, smoothstep( 0.15, 0.9, ring ), 0.6 );            // sharper late-wood lines
-  float fiber = fbm( vec2( u * 128.0, v * 5.0 ), vec2( 128.0, 5.0 ), 5, uSeed + 5.0 );
+  float fiber = fbm( vec2( u * 160.0, v * 1.0 ), vec2( 160.0, 1.0 ), 5, uSeed + 5.0 );
   float pore = pow( fbm( vec2( u * 512.0, v * 20.0 ), vec2( 512.0, 20.0 ), 3, uSeed + 9.0 ), 3.0 );
   float fleck = smoothstep( 0.72, 0.8, vnoise( vec2( u * 90.0, v * 400.0 ), vec2( 90.0, 400.0 ), uSeed + 13.0 ) ) * 0.5;
   float knotd = cells( vec2( u * 2.0, v * 1.0 ) + warp * 0.3, vec2( 2.0, 1.0 ), uSeed + 21.0 );
   float knot = smoothstep( 0.05, 0.012, knotd ) * step( 0.55, ih( floor( vec2( u * 2.0, v ) ), uSeed + 31.0 ) );
-  float t = clamp( ring * 0.42 + fiber * 0.5 + 0.06 + fleck * 0.1, 0.0, 1.0 );
+  float t = clamp( ring * 0.5 + fiber * 0.36 + 0.1 + fleck * 0.08, 0.0, 1.0 );
   t = mix( t, 0.1 + 0.3 * sin( knotd * 260.0 ), knot );
-  float shade = ( 1.0 + tint * 0.22 ) * ( 1.0 - pore * 0.55 ) * ( 1.0 - groove * 0.65 ) * ( 1.0 - knot * 0.35 );
+  float shade = ( 1.0 + tint * 0.22 ) * ( 1.0 - pore * 0.38 ) * ( 1.0 - groove * 0.65 ) * ( 1.0 - knot * 0.35 );
   c = mix( uDark, uLight, t ) * shade;
   float cup = uPlanks > 0.5 ? sin( fract( u * uPlanks ) * 3.14159 ) : 0.0;
   h = t * 0.5 + fiber * 0.22 - pore * 0.6 - groove * 2.6 - knot * 0.3 + cup * 1.4;
@@ -530,6 +530,56 @@ void surf( vec2 uv, out vec3 c, out float h, out float r, out float m ) {
   c = vec3( 1.0 - seam * 0.55 ) * ( 0.93 + peb * 0.07 );
   h = peb * 0.6 * ( 1.0 - seam ) - seam * 1.5;
   r = 0.75 + seam * 0.2 - peb * 0.1;
+  m = 0.0;
+}`,
+    { uSeed: { value: seed } },
+  );
+}
+
+/** Grained leather with welted, stitched vertical seams (lathe UVs: u around, v along). */
+export function leatherSet(seed = 73): PBRSet {
+  return buildSet(
+    MID,
+    5,
+    /* glsl */ `
+uniform float uSeed;
+void surf( vec2 uv, out vec3 c, out float h, out float r, out float m ) {
+  float g1 = cells( uv * vec2( 220.0, 110.0 ), vec2( 220.0, 110.0 ), uSeed );
+  float g2 = cells( uv * vec2( 90.0, 45.0 ), vec2( 90.0, 45.0 ), uSeed + 3.0 );
+  float grain = smoothstep( 0.0, 0.55, g1 ) * 0.6 + smoothstep( 0.0, 0.6, g2 ) * 0.4;
+  float wr = fbm( uv * vec2( 12.0, 6.0 ), vec2( 12.0, 6.0 ), 4, uSeed + 9.0 );
+  float d = 0.125 - abs( fract( uv.x * 4.0 ) - 0.5 ) / 4.0;
+  float welt = smoothstep( 0.007, 0.003, d );
+  float stitch = smoothstep( 0.004, 0.002, abs( d - 0.013 ) ) * step( 0.45, fract( uv.y * 70.0 ) );
+  c = vec3( 0.86 + grain * 0.1 + ( wr - 0.5 ) * 0.14 );
+  c = mix( c, vec3( 1.0, 0.94, 0.82 ), stitch * 0.75 );
+  h = grain * 0.35 + wr * 0.5 + welt * 2.0 + stitch * 0.9;
+  r = clamp( 0.5 + ( 1.0 - grain ) * 0.22 - welt * 0.1 + ( wr - 0.5 ) * 0.25, 0.1, 1.0 );
+  m = 0.0;
+}`,
+    { uSeed: { value: seed } },
+  );
+}
+
+/** Basketball: pebbled composite leather with eight panels and recessed black channels (UV sphere mapping). */
+export function basketballSet(seed = 75): PBRSet {
+  return buildSet(
+    MID,
+    6,
+    /* glsl */ `
+uniform float uSeed;
+void surf( vec2 uv, out vec3 c, out float h, out float r, out float m ) {
+  float th = uv.y * 3.14159265, ph = uv.x * 6.2831853;
+  vec3 p = vec3( sin( th ) * cos( ph ), cos( th ), sin( th ) * sin( ph ) );
+  float f = 0.5 + 0.45 * p.y * p.y;
+  float d = min( min( abs( p.x ), abs( p.z ) ), abs( abs( p.x ) - f ) * 0.75 );
+  float seam = smoothstep( 0.024, 0.013, d );
+  float squash = max( 0.2, sin( th ) );
+  float peb = smoothstep( 0.55, 0.2, cells( vec2( uv.x * 260.0 * squash, uv.y * 130.0 ), vec2( floor( 260.0 * squash ), 130.0 ), uSeed ) );
+  float tone = fbm( uv * vec2( 8.0, 4.0 ), vec2( 8.0, 4.0 ), 4, uSeed + 2.0 );
+  c = mix( vec3( 0.78 + peb * 0.22 ) * ( 0.88 + tone * 0.24 ), vec3( 0.03 ), seam );
+  h = peb * 0.7 * ( 1.0 - seam ) - seam * 2.2;
+  r = mix( 0.6 - peb * 0.12 + tone * 0.18, 0.85, seam );
   m = 0.0;
 }`,
     { uSeed: { value: seed } },

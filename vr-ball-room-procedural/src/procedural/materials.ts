@@ -16,6 +16,8 @@ import {
   plasterSet,
   rugSet,
   rubberSet,
+  leatherSet,
+  basketballSet,
   retile,
   tileSet,
   woodSet,
@@ -64,6 +66,28 @@ export function rubberBall(color: number): MeshStandardMaterial {
   const m = withSet(base, rubberCache, 1.2);
   m.roughness = 0.5;
   return m;
+}
+
+let leatherCache: PBRSet | null = null;
+/** Stitched leather (punch bag). */
+export function leather(color: number): MeshStandardMaterial {
+  leatherCache ??= leatherSet();
+  const base = QUALITY.clearcoat
+    ? new MeshPhysicalMaterial({ sheen: 0.5, sheenRoughness: 0.5, sheenColor: new Color(color).multiplyScalar(0.5) })
+    : new MeshStandardMaterial();
+  base.color = new Color(color);
+  return withSet(base, leatherCache, 1.1);
+}
+
+let bballCache: PBRSet | null = null;
+/** Orange pebbled basketball with black channels. */
+export function basketball(): MeshStandardMaterial {
+  bballCache ??= basketballSet();
+  const base = QUALITY.clearcoat
+    ? new MeshPhysicalMaterial({ sheen: 0.35, sheenColor: new Color(0x8a3a10) })
+    : new MeshStandardMaterial();
+  base.color = new Color(0xd9661f);
+  return withSet(base, bballCache, 1.3);
 }
 
 let metalCache: PBRSet | null = null;

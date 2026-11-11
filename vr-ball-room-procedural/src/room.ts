@@ -77,11 +77,27 @@ import {
   detailDartboard,
   detailedDart,
 } from './procedural/geometry.js';
+import {
+  bagBase,
+  bagGeometry,
+  bagTrim,
+  hammerDetail,
+  hollow,
+  hoopDress,
+  laneMarkings,
+  moleCabinet,
+  moleMarquee,
+  pedestal,
+  strikerDress,
+  xyloFrame,
+} from './procedural/stations.js';
 import { setTextureRenderer } from './procedural/textures.js';
 import { buildProceduralEnvironment, procEnv } from './procedural/env.js';
 import {
+  basketball,
   canMetal,
   floorPlanks,
+  leather,
   plaster,
   oak,
   plastic,
@@ -1957,21 +1973,14 @@ function buildFiveToyStations(world: World) {
   // ==========================================================================
   const bbZ = HOOP_RIM_POS.z;
   // Backboard mounted on left wall (-X, facing +X) + floor support post for Giant Stump
-  staticBox(world, [0.04, 0.78, 1.1], [-2.86, 2.12, bbZ], 0xf4f6f8);
-  const hoopPost = new Mesh(new CylinderGeometry(0.048, 0.058, 2.12, 16), mat(0x2b303a, 0.5));
+  staticBox(world, [0.04, 0.78, 1.1], [-2.86, 2.12, bbZ], 0xf1f1ec);
+  world.createTransformEntity(hoopDress(-2.84, 2.12, bbZ, HOOP_RIM_POS));
+  const hoopPost = new Mesh(new CylinderGeometry(0.048, 0.058, 2.12, 16), mat(0x1c1e22, 0.35));
   hoopPost.position.set(-2.9, 1.06, bbZ);
   world.createTransformEntity(hoopPost);
   world.createTransformEntity(
     hoopDetail(HOOP_RIM_POS.x, HOOP_RIM_POS.y, HOOP_RIM_POS.z, HOOP_RIM_POS.radius),
   );
-  // Red shooter's square on backboard
-  const shooterBox = new Mesh(
-    new BoxGeometry(0.01, 0.28, 0.38),
-    mat(0xe63946, 0.4),
-  );
-  shooterBox.position.set(-2.835, 2.02, bbZ);
-  world.createTransformEntity(shooterBox);
-
   // Orange steel rim made of 8 static collider segments so balls bounce off the rim
   const rimR = HOOP_RIM_POS.radius;
   const rimSegs = 8;
@@ -1979,23 +1988,8 @@ function buildFiveToyStations(world: World) {
     const a = (i / rimSegs) * Math.PI * 2;
     const rx = HOOP_RIM_POS.x + Math.cos(a) * rimR;
     const rz = HOOP_RIM_POS.z + Math.sin(a) * rimR;
-    staticBox(world, [0.055, 0.03, 0.14], [rx, HOOP_RIM_POS.y, rz], 0xff5722);
-  }
-
-  // White net strands hanging under the rim
-  const netMat = mat(0xffffff, 0.7);
-  for (let i = 0; i < 10; i++) {
-    const a = (i / 10) * Math.PI * 2;
-    const strand = new Mesh(
-      new CylinderGeometry(0.005, 0.004, 0.26, 8),
-      netMat,
-    );
-    strand.position.set(
-      HOOP_RIM_POS.x + Math.cos(a) * (rimR * 0.85),
-      HOOP_RIM_POS.y - 0.13,
-      HOOP_RIM_POS.z + Math.sin(a) * (rimR * 0.85),
-    );
-    world.createTransformEntity(strand);
+    // Collider only: the visible rim is the steel ring in hoopDetail
+    staticBox(world, [0.055, 0.03, 0.14], [rx, HOOP_RIM_POS.y, rz], 0xff5722, false).object3D!.visible = false;
   }
 
   // 5 Score LED Pips above the backboard
@@ -2010,12 +2004,16 @@ function buildFiveToyStations(world: World) {
   }
 
   // Ball pedestal + full-size Orange Basketball
-  staticBox(world, [0.28, 0.72, 0.28], [-2.15, 0.36, bbZ + 0.65], 0x3d4450);
+  {
+    const ped = staticBox(world, [0.28, 0.72, 0.28], [-2.15, 0.36, bbZ + 0.65], 0x3d4450).object3D as Mesh;
+    hollow(ped);
+    ped.add(pedestal(0.28, 0.72));
+  }
   const bballR = 0.105;
   const bballHome: [number, number, number] = [-2.15, 0.72 + bballR + 0.01, bbZ + 0.65];
   const bballMesh = new Mesh(
-    new SphereGeometry(bballR, 28, 18),
-    rubberBall(0xe85d04),
+    new SphereGeometry(bballR, 64, 40),
+    basketball(),
   );
   bballMesh.position.set(...bballHome);
   bballMesh.castShadow = true;
@@ -2045,7 +2043,17 @@ function buildFiveToyStations(world: World) {
   // ==========================================================================
   const laneX = 2.18;
   // Smooth maple bowling lane strip & low side bumper rails
-  staticBox(world, [0.76, 0.02, 3.2], [laneX, 0.01, -0.55], 0xd9a05b);
+  {
+    const lane = staticBox(world, [0.76, 0.02, 3.2], [laneX, 0.01, -0.55], 0xd9a05b).object3D as Mesh;
+    const spots: Array<[number, number]> = [];
+    [1, 2, 3].forEach((count, rIdx) => {
+      for (let i = 0; i < count; i++) spots.push([(i - (count - 1) / 2) * 0.15, 1.0 + rIdx * 0.16]);
+    });
+    // Decal space: +y of the flat plane points down-lane (toward the pins)
+    const marks = laneMarkings(0.74, 3.18, spots.map(([x, z]) => [x, -z] as [number, number]));
+    marks.position.y = 0.0108;
+    lane.add(marks);
+  }
   staticBox(world, [0.05, 0.08, 3.2], [laneX - 0.405, 0.04, -0.55], 0x5c3a21);
   staticBox(world, [0.05, 0.08, 3.2], [laneX + 0.405, 0.04, -0.55], 0x5c3a21);
 
@@ -2100,7 +2108,11 @@ function buildFiveToyStations(world: World) {
   });
 
   // Heavy cobalt-blue Bowling Ball on a return rack at the front of the lane
-  staticBox(world, [0.26, 0.55, 0.26], [laneX, 0.275, 1.12], 0x2b303a);
+  {
+    const ped = staticBox(world, [0.26, 0.55, 0.26], [laneX, 0.275, 1.12], 0x2b303a).object3D as Mesh;
+    hollow(ped);
+    ped.add(pedestal(0.26, 0.55));
+  }
   const bowlR = 0.095;
   const bowlHome: [number, number, number] = [laneX, 0.55 + bowlR + 0.01, 1.12];
   const bowlBall = new Mesh(
@@ -2137,7 +2149,23 @@ function buildFiveToyStations(world: World) {
   const xyloX = -1.75;
   const xyloZ = 0.05;
   const xyloH = 0.78;
-  staticBox(world, [0.46, xyloH, 0.86], [xyloX, xyloH / 2, xyloZ], 0x5c3d24);
+  {
+    const stand = staticBox(world, [0.46, xyloH, 0.86], [xyloX, xyloH / 2, xyloZ], 0x5c3d24).object3D as Mesh;
+    const legWood = oak('#000000', '#8a6238', 1, 1, 0.4);
+    const topWood = oak('#000000', '#8a6238', 1, 1, 0.34);
+    const t = buildTable(0.46, xyloH, 0.86, legWood, topWood);
+    stand.geometry.dispose();
+    stand.geometry = t.top;
+    stand.material = topWood;
+    stand.add(t.parts);
+    const frame = xyloFrame(
+      [0, 1, 2, 3, 4, 5, 6, 7].map((i) => 0.34 - i * 0.018),
+      [0, 1, 2, 3, 4, 5, 6, 7].map((i) => -0.31 + i * 0.088),
+      0.011,
+    );
+    frame.position.y = xyloH / 2;
+    stand.add(frame);
+  }
 
   const noteFreqs = [261.63, 293.66, 329.63, 349.23, 392.0, 440.0, 493.88, 523.25];
   const noteColors = [
@@ -2153,6 +2181,8 @@ function buildFiveToyStations(world: World) {
       new BoxGeometry(barLen, 0.022, 0.068),
       mat(noteColors[i], 0.25),
     );
+    // Lacquered aluminium tone bar
+    (barMesh.material as MeshStandardMaterial).metalness = 0.55;
     barMesh.add(barStuds(barLen));
     barMesh.position.set(xyloX, barY, barZ);
     barMesh.castShadow = true;
@@ -2176,7 +2206,7 @@ function buildFiveToyStations(world: World) {
     handle.geometry.rotateZ(Math.PI / 2);
     const headBall = new Mesh(
       new SphereGeometry(0.026, 16, 12),
-      rubberBall(0xff3b30),
+      mat(0xd8342a, 0.45),
     );
     headBall.position.set(-0.12, 0, 0);
     handle.add(headBall);
@@ -2211,7 +2241,8 @@ function buildFiveToyStations(world: World) {
   const wamX = -1.95;
   const wamZ = 1.65;
   const wamH = 0.76;
-  staticBox(world, [0.58, wamH, 0.78], [wamX, wamH / 2, wamZ], 0x2b2d42);
+  const wamBody = staticBox(world, [0.58, wamH, 0.78], [wamX, wamH / 2, wamZ], 0x2b2d42).object3D as Mesh;
+  hollow(wamBody);
 
   // Backboard header with 5 score lights
   const wamBack = new Mesh(
@@ -2219,6 +2250,7 @@ function buildFiveToyStations(world: World) {
     mat(0xef233c, 0.4),
   );
   wamBack.position.set(wamX - 0.26, wamH + 0.21, wamZ);
+  wamBack.add(moleMarquee(0.78, 0.04, 0.07, [0, 1, 2, 3, 4].map((i) => -0.24 + i * 0.12)));
   world.createTransformEntity(wamBack);
 
   for (let i = 0; i < 5; i++) {
@@ -2240,6 +2272,7 @@ function buildFiveToyStations(world: World) {
     [wamX + 0.12, wamZ + 0.18],
   ];
 
+  wamBody.add(moleCabinet(0.58, wamH, 0.78, moleCoords.map(([mx, mz]) => [mx - wamX, mz - wamZ] as [number, number])));
   moleCoords.forEach(([mx, mz], idx) => {
     const rim = new Mesh(
       new CylinderGeometry(0.068, 0.072, 0.02, 20),
@@ -2300,6 +2333,7 @@ function buildFiveToyStations(world: World) {
   hammerHead.geometry.rotateZ(Math.PI / 2);
   hammerHead.position.set(0, 0.11, 0);
   hammerShaft.add(hammerHead);
+  hammerShaft.add(hammerDetail(0xd62828));
 
   const hammerHome: [number, number, number] = [wamX + 0.21, wamH + 0.14, wamZ + 0.28];
   hammerShaft.position.set(...hammerHome);
@@ -2325,12 +2359,16 @@ function buildFiveToyStations(world: World) {
   // STATION 5: Spring Boxing Reflex Speed-Bag + Carnival High-Striker Bell Tower
   // ==========================================================================
   // 5A. Spring Boxing Reflex Speed-Bag (Right-Back area)
-  staticBox(
-    world,
-    [0.44, 0.08, 0.44],
-    [BAG_BASE_POS.x, BAG_BASE_POS.y, BAG_BASE_POS.z],
-    0x22262b,
-  );
+  {
+    const base = staticBox(
+      world,
+      [0.44, 0.08, 0.44],
+      [BAG_BASE_POS.x, BAG_BASE_POS.y, BAG_BASE_POS.z],
+      0x22262b,
+    ).object3D as Mesh;
+    hollow(base);
+    base.add(bagBase());
+  }
   const bagPivot = new Mesh(
     new SphereGeometry(0.04, 14, 10),
     mat(0xadb5bd, 0.3),
@@ -2345,11 +2383,8 @@ function buildFiveToyStations(world: World) {
   bagPivot.add(bagRod);
   bagPivot.add(coilSpring(0.03, 0.22, 7));
 
-  const pearBag = new Mesh(
-    new SphereGeometry(0.16, 24, 18),
-    rubberBall(0xc1121f),
-  );
-  pearBag.scale.set(1.0, 1.28, 1.0);
+  const pearBag = new Mesh(bagGeometry(), leather(0xb5121c));
+  pearBag.add(bagTrim());
   pearBag.position.set(0, 1.24, 0);
   pearBag.castShadow = true;
   bagPivot.add(pearBag);
@@ -2374,6 +2409,17 @@ function buildFiveToyStations(world: World) {
   );
   towerMast.position.set(sx, 1.18, sz + 0.12);
   world.createTransformEntity(towerMast);
+  {
+    const bulbGlow = new MeshStandardMaterial({
+      color: new Color(0xfff1d0),
+      emissive: new Color(0xffc56e),
+      emissiveIntensity: 2.2,
+      roughness: 0.3,
+    });
+    const dress = strikerDress(0.08, 0.055, 2.305, bulbGlow);
+    dress.position.set(sx, 0, sz);
+    world.createTransformEntity(dress);
+  }
 
   // Target Strike Button Pad on the base
   const strikePad = new Mesh(

@@ -34,6 +34,8 @@ light bake in a few frames), `info` (state in the page title, read by `tools/dum
 | `env.ts` | Sky shader, reflection probe, sun, light shafts, dust, lamps, lighting zones | Anything about light, sky or reflections |
 | `bake.ts` | GPU light bake for box-built scenery | Real soft lighting and ambient occlusion |
 | `furniture.ts` | Modelled furniture: `pillow()` (rounded, stuffed cushion shape), task chair, floor lamp, sofa cushions, desk accessories | Any furniture: build from `pillow`, lathe profiles and mixed materials, never plain boxes |
+| `plants.ts` | Weeping fig grown from a branch skeleton: merged tube mesh for the wood, instanced modelled leaves with a painted vein texture, planter with clay pebbles | Any potted plant (`buildPlant(height, seed, steelPot)`) |
+| `stations.ts` | Modelled bodies for the toy stations: hoop frame and rim mount, turned pedestals, xylophone frame, arcade cabinet and marquee, high-striker scale and bulbs, punch-bag, lane markings; `decal()` for printed graphics, `hollow()` to hide a collider mesh | Dressing a gameplay collider as a real object |
 | `showcase.ts` | The Gallery room, its doors and its system | The reference for building a baked room |
 | `arena.ts` | The outdoor Monke Map | Terrain, trees, rocks, grass |
 
@@ -65,6 +67,10 @@ room box, sun target) and call `procEnv.setZone(zone)` while the player is insid
 
 **New prop in the main room.** Build a mesh/group and add it to `procEnv.roomGroup` (it is hidden
 automatically in the Monke Map). Thrown objects need a `PhysicsShape` + `PhysicsBody`; see `room.ts`.
+
+**Dressing a gameplay block.** Keep the `staticBox` collider, call `hollow(entity.object3D)` so it
+draws nothing, and add a modelled group from `stations.ts` as its child (origin = collider centre).
+Printed graphics (scales, signs, markings) are `decal()` planes painted on a canvas.
 
 ## Traps (each of these has already bitten once)
 

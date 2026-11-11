@@ -27,15 +27,20 @@ WebGL". The owner has repeatedly rejected results that were merely nice. Specifi
 
 ## State
 
-- Main room (`room.ts` + `decor.ts`): restyled, detailed toys, but NOT baked (painted corner
-  shadows). Its walls are still flat planes.
-- The Gallery (`showcase.ts`, start with `?dbg=gallery`): baked lighting, the showcase for
-  realism. Furniture detail lives in `furniture.ts`.
-- Untested: walking through the doors between rooms, the Low tier's look, anything in a headset.
+- Main room (`room.ts` + `decor.ts`): restyled, NOT baked (painted corner shadows), walls still
+  flat planes. Toy stations are now modelled (`stations.ts`): hoop frame/rim mount/printed board,
+  turned pedestals, xylophone on a real table, arcade whack-a-mole cabinet, high striker with
+  printed scale and bulbs, leather punch bag, lane markings, opal-glass wall sconces.
+- Plants everywhere are grown weeping figs (`plants.ts`). Oak grain was retuned (long fibres).
+- The Gallery (`showcase.ts`, start with `?dbg=gallery`): baked lighting. Desk top is stained ash,
+  the monitor shows a desktop image, the lamp shade glows with a falloff.
+- Untested: walking through the doors between rooms, anything in a headset.
 
-## Best next steps
+## Best next steps (objects still below the bar)
 
-- Keep replacing box furniture with modelled pieces (`furniture.ts`), and bake them
-  (`bake.bakeObject`).
+- RC car and remote: still boxy bodywork; needs a moulded shell, wheel arches, tyre tread.
+- Stretchy head on the Gallery door, moles, dartboard stand, the rug (flat stripes, no pile/edge).
+- Sofa: no piping, seams or creases. Books: no spine titles. Chandelier in the main room.
 - Give the main room the Gallery treatment: baked lighting, wall relief.
 - Sharper floor reflections; softer sun shadow edges; test the door triggers in a real browser.
+- Reference photos: Wikimedia Commons rate-limits hard; fetch one search every ~15 s.
