@@ -525,7 +525,7 @@ export class ProcEnvSystem extends createSystem({}) {
     dl.shadow.map = null as unknown as typeof dl.shadow.map;
     dl.shadow.bias = -0.0012;
     dl.shadow.normalBias = 0.045;
-    dl.shadow.radius = QUALITY.high ? 3.5 : 2.5;
+    dl.shadow.radius = QUALITY.high ? 6 : 3;
 
     this.beams = buildBeams(this.L);
     this.dust = buildDust();
@@ -546,11 +546,11 @@ export class ProcEnvSystem extends createSystem({}) {
     const dl = this.dirLight!;
     // Sun / moon. The reflection probe supplies bounce light, so the flat fill is kept low.
     dl.color.setHex(night ? 0x8fb0ff : 0xfff0d8);
-    dl.intensity = night ? (monke ? 1.1 : 0.55) : 3.4;
+    dl.intensity = night ? (monke ? 1.1 : 0.55) : monke ? 3.2 : 2.7;
     if (this.hemiLight) {
       this.hemiLight.color.setHex(night ? 0x1c2a4a : 0xe6e9f2);
       this.hemiLight.groundColor.setHex(night ? 0x2a2018 : 0xa89878);
-      this.hemiLight.intensity = night ? (monke ? 0.4 : 0.22) : monke ? 0.7 : 0.95;
+      this.hemiLight.intensity = night ? (monke ? 0.4 : 0.22) : monke ? 0.7 : 1.15;
     }
     skyUniforms.uNight.value = night ? 1 : 0;
     skyUniforms.uGain.value = 1.7;

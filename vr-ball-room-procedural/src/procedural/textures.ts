@@ -307,7 +307,7 @@ void surf( vec2 uv, out vec3 c, out float h, out float r, out float m ) {
   float pore = pow( fbm( vec2( u * 512.0, v * 20.0 ), vec2( 512.0, 20.0 ), 3, uSeed + 9.0 ), 3.0 );
   float fleck = smoothstep( 0.72, 0.8, vnoise( vec2( u * 90.0, v * 400.0 ), vec2( 90.0, 400.0 ), uSeed + 13.0 ) ) * 0.5;
   float knotd = cells( vec2( u * 2.0, v * 1.0 ) + warp * 0.3, vec2( 2.0, 1.0 ), uSeed + 21.0 );
-  float knot = smoothstep( 0.09, 0.02, knotd );
+  float knot = smoothstep( 0.05, 0.012, knotd ) * step( 0.55, ih( floor( vec2( u * 2.0, v ) ), uSeed + 31.0 ) );
   float t = clamp( ring * 0.62 + fiber * 0.42 - 0.03 + fleck * 0.12, 0.0, 1.0 );
   t = mix( t, 0.1 + 0.3 * sin( knotd * 260.0 ), knot );
   float shade = ( 1.0 + tint * 0.22 ) * ( 1.0 - pore * 0.55 ) * ( 1.0 - groove * 0.65 ) * ( 1.0 - knot * 0.35 );
