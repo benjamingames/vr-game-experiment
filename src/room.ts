@@ -57,6 +57,7 @@ import {
   ToyMallet,
   XylophoneBar,
 } from './ball-components.js';
+import { buildMaze, mazeHooks } from './maze.js';
 
 // ---- Tweak these to play around -------------------------------------------
 const ROOM = { width: 6, depth: 6, height: 3 }; // meters; player starts at the center
@@ -239,6 +240,10 @@ export function buildRoom(world: World) {
 
   // 3-Lines Menu Button & Floating VR Settings Menu (Day/Night + Girl/Boy Hand Tracking Hands)
   buildSettingsMenuAndLauncher(world, tableTop);
+
+  // Spooky doorway on the far wall that leads to the cake maze (the maze itself lives far away)
+  mazeHooks.isRoomActive = () => !(sceneSkyRefs.gorillaTagMapGroup?.visible ?? false);
+  buildMaze(world);
 }
 
 const RC_CAR_SIZE: [number, number, number] = [0.16, 0.085, 0.24];

@@ -11,6 +11,7 @@ import {
   StretchyFaceSystem,
   ToyStationsSystem,
 } from './room.js';
+import { MazeSystem } from './maze.js';
 
 World.create(
   document.getElementById('scene-container') as HTMLDivElement,
@@ -32,5 +33,6 @@ World.create(
   world.registerSystem(ToyStationsSystem);
   world.registerSystem(SettingsAndHandsSystem);
   world.registerSystem(ResetSystem);
+  world.registerSystem(MazeSystem);
   buildRoom(world);
 });
