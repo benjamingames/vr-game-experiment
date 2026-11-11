@@ -8,9 +8,13 @@ import {
   BoxGeometry as PlainBox,
   BufferGeometry,
   CanvasTexture,
+  CircleGeometry,
   Color,
   CylinderGeometry as PlainCylinder,
+  DoubleSide,
+  Float32BufferAttribute,
   Group,
+  MeshPhysicalMaterial,
   LatheGeometry,
   Mesh,
   MeshStandardMaterial,
@@ -254,4 +258,209 @@ export function canLabel(word: string): CanvasTexture {
   t.colorSpace = SRGBColorSpace;
   t.anisotropy = QUALITY.anisotropy;
   return t;
+}
+
+// ---- Darts, dartboard, RC car ---------------------------------------------------------
+
+const metalMat = (color: number, rough = 0.25, metal = 1) =>
+  new MeshStandardMaterial({ color: new Color(color), metalness: metal, roughness: rough });
+
+/** Steel-tip dart along Z (point at -Z): knurled barrel, collar, shaft and four kite flights. */
+export function detailedDart(color: number, width: number): Mesh {
+  // Torpedo barrel with machined grip rings
+  const prof: Array<[number, number]> = [[0, -0.03]];
+  const n = 44;
+  for (let i = 0; i <= n; i++) {
+    const t = i / n;
+    const body = 0.0052 + 0.0052 * Math.sin(Math.PI * Math.min(1, t * 1.15 + 0.08));
+    const grip = t > 0.18 && t < 0.82 ? 0.0009 * (i % 2) : 0;
+    prof.push([body - grip, -0.03 + t * 0.06]);
+  }
+  prof.push([0, 0.03]);
+  const barrelGeo = lathe(prof, 28);
+  barrelGeo.rotateX(Math.PI / 2);
+  const barrel = shadowed(new Mesh(barrelGeo, metalMat(color, 0.3, 0.85)));
+
+  const tipGeo = lathe([[0, 0], [0.0012, 0.004], [0.0026, 0.03], [0.004, 0.044], [0, 0.044]], 16);
+  tipGeo.rotateX(Math.PI / 2);
+  const tip = shadowed(new Mesh(tipGeo, metalMat(0xdfe6ee, 0.18)));
+  tip.position.z = -0.072;
+  barrel.add(tip);
+
+  const collarGeo = lathe([[0.0042, 0], [0.006, 0.002], [0.006, 0.006], [0.0045, 0.008]], 20);
+  collarGeo.rotateX(Math.PI / 2);
+  const collar = new Mesh(collarGeo, metalMat(0xd4af37, 0.22));
+  collar.position.z = -0.036;
+  barrel.add(collar);
+
+  const shaftGeo = lathe(
+    [[0.0048, 0], [0.0052, 0.003], [0.0036, 0.008], [0.003, 0.04], [0.0042, 0.046], [0.0042, 0.05], [0, 0.05]],
+    16,
+  );
+  shaftGeo.rotateX(Math.PI / 2);
+  const shaft = new Mesh(shaftGeo, new MeshStandardMaterial({ color: new Color(0x1c1f24), roughness: 0.4 }));
+  shaft.position.z = 0.028;
+  barrel.add(shaft);
+
+  // Flights: four thin kites with a moulded rib
+  const w = width / 2;
+  const pos: number[] = [];
+  const kite: Array<[number, number]> = [[0.0015, 0.05], [w * 0.75, 0.058], [w, 0.074], [w * 0.8, 0.088], [0.0015, 0.086]];
+  for (let f = 0; f < 4; f++) {
+    const a = (f * Math.PI) / 2;
+    const cx = Math.cos(a);
+    const sy = Math.sin(a);
+    for (let i = 1; i < kite.length - 1; i++) {
+      for (const k of [0, i, i + 1]) pos.push(kite[k][0] * cx, kite[k][0] * sy, kite[k][1]);
+    }
+  }
+  const finGeo = new BufferGeometry();
+  finGeo.setAttribute('position', new Float32BufferAttribute(pos, 3));
+  finGeo.computeVertexNormals();
+  const fins = new Mesh(
+    finGeo,
+    new MeshStandardMaterial({ color: new Color(color), roughness: 0.35, side: DoubleSide }),
+  );
+  fins.castShadow = true;
+  barrel.add(fins);
+  return barrel;
+}
+
+/** Adds a wire spider, numbered ring, oak surround, bull stud and screws to the flat board. */
+export function detailDartboard(board: Mesh, radius: number, thickness: number, wood: MeshStandardMaterial) {
+  const chrome = metalMat(0xe6ebf0, 0.16);
+  const z0 = thickness / 2 + 0.0105;
+  for (const f of [1, 0.78, 0.56, 0.36, 0.18, 0.07]) {
+    const ring = new Mesh(new TorusGeometry(radius * f, 0.0016, 8, 96), chrome);
+    ring.position.z = z0;
+    board.add(ring);
+  }
+  for (let i = 0; i < 20; i++) {
+    const a = ((i + 0.5) / 20) * Math.PI * 2;
+    const len = radius * (1 - 0.18);
+    const wire = new Mesh(new PlainCylinder(0.0013, 0.0013, len, 6), chrome);
+    wire.rotation.z = a;
+    wire.position.set(-Math.sin(a) * (radius * 0.18 + len / 2), Math.cos(a) * (radius * 0.18 + len / 2), z0);
+    board.add(wire);
+  }
+  // Number ring drawn on a canvas, sitting just outside the scoring area
+  const c = document.createElement('canvas');
+  c.width = c.height = 1024;
+  const x = c.getContext('2d')!;
+  x.fillStyle = '#15161a';
+  x.fillRect(0, 0, 1024, 1024);
+  x.fillStyle = '#f4f1e8';
+  x.font = '700 44px Arial, sans-serif';
+  x.textAlign = 'center';
+  x.textBaseline = 'middle';
+  const nums = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5];
+  const outer = radius + 0.06;
+  const rr = ((radius + 0.03) / outer) * 512;
+  nums.forEach((nv, i) => {
+    const a = (i / 20) * Math.PI * 2;
+    x.save();
+    x.translate(512 + Math.sin(a) * rr, 512 - Math.cos(a) * rr);
+    x.rotate(a);
+    x.fillText(String(nv), 0, 0);
+    x.restore();
+  });
+  const tex = new CanvasTexture(c);
+  tex.colorSpace = SRGBColorSpace;
+  tex.anisotropy = QUALITY.anisotropy;
+  const numbers = new Mesh(
+    new CircleGeometry(outer, 96),
+    new MeshStandardMaterial({ map: tex, roughness: 0.8 }),
+  );
+  numbers.position.z = thickness / 2 + 0.0006;
+  numbers.receiveShadow = true;
+  board.add(numbers);
+  const hoop = shadowed(new Mesh(new TorusGeometry(outer + 0.012, 0.016, 16, 96), wood));
+  hoop.position.z = thickness / 2 - 0.004;
+  board.add(hoop);
+  const stud = new Mesh(new PlainSphere(0.006, 16, 10), metalMat(0xc9a04e, 0.25));
+  stud.scale.z = 0.5;
+  stud.position.z = z0 + 0.001;
+  board.add(stud);
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+    const screw = new Mesh(new PlainCylinder(0.006, 0.006, 0.004, 12), chrome);
+    screw.rotation.x = Math.PI / 2;
+    screw.position.set(Math.cos(a) * (outer + 0.012), Math.sin(a) * (outer + 0.012), thickness / 2 + 0.012);
+    board.add(screw);
+  }
+}
+
+/** Dresses the block-built RC car: tyres with tread, spoked rims, lights, glass, mirrors, aerial. */
+export function detailCar(chassis: Mesh, w: number, h: number, d: number) {
+  const rubber = new MeshStandardMaterial({ color: new Color(0x121314), roughness: 0.92 });
+  const chrome = metalMat(0xe2e7ee, 0.14);
+  const dark = new MeshStandardMaterial({ color: new Color(0x15181c), roughness: 0.45 });
+  const add = (geo: BufferGeometry, m: MeshStandardMaterial, x: number, y: number, z: number, parent: Mesh | Group = chassis) => {
+    const mesh = new Mesh(geo, m);
+    mesh.position.set(x, y, z);
+    mesh.castShadow = true;
+    parent.add(mesh);
+    return mesh;
+  };
+  for (const name of ['rc-wheel-fl', 'rc-wheel-fr', 'rc-wheel-rl', 'rc-wheel-rr']) {
+    const wheel = chassis.getObjectByName(name) as Mesh | undefined;
+    if (!wheel) continue;
+    const out = wheel.position.x > 0 ? 1 : -1;
+    const tyre = add(new TorusGeometry(0.0225, 0.0085, 14, 40), rubber, 0, 0, 0, wheel);
+    tyre.rotation.y = Math.PI / 2;
+    for (let i = 0; i < 18; i++) {
+      const a = (i / 18) * Math.PI * 2;
+      const lug = add(new PlainBox(0.02, 0.004, 0.0045), rubber, 0, Math.cos(a) * 0.0305, Math.sin(a) * 0.0305, wheel);
+      lug.rotation.x = a;
+    }
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * Math.PI * 2;
+      const spoke = add(new PlainBox(0.003, 0.014, 0.0035), chrome, out * 0.012, Math.cos(a) * 0.008, Math.sin(a) * 0.008, wheel);
+      spoke.rotation.x = a;
+    }
+    const cap = add(new PlainSphere(0.0045, 12, 8), chrome, out * 0.0125, 0, 0, wheel);
+    cap.scale.x = 0.5;
+  }
+  // Lamps
+  const lamp = (color: number, x: number, y: number, z: number, glow: number) => {
+    const m = new MeshStandardMaterial({
+      color: new Color(color),
+      emissive: new Color(color),
+      emissiveIntensity: glow,
+      roughness: 0.15,
+    });
+    const s = add(new PlainSphere(0.0075, 16, 10), m, x, y, z);
+    s.scale.z = 0.45;
+    const bezel = add(new TorusGeometry(0.0078, 0.0012, 8, 24), chrome, x, y, z);
+    return bezel;
+  };
+  for (const s of [-1, 1]) {
+    lamp(0xfff6d0, s * w * 0.28, 0.004, -d * 0.492, 1.6);
+    lamp(0xff2a1a, s * w * 0.3, 0.006, d * 0.474, 1.2);
+    // Mirrors
+    add(new BoxGeometry(0.012, 0.008, 0.005), dark, s * w * 0.44, h * 0.3, -d * 0.16);
+    // Exhausts
+    const pipe = add(new PlainCylinder(0.0045, 0.0045, 0.02, 14, 1, true), chrome, s * w * 0.18, -h * 0.17, d * 0.48);
+    pipe.rotation.x = Math.PI / 2;
+  }
+  // Grille slats
+  for (let i = 0; i < 4; i++) add(new PlainBox(w * 0.34, 0.0018, 0.003), chrome, 0, -h * 0.18 + i * 0.005, -d * 0.492);
+  // Windscreen and rear window
+  const glass = new MeshPhysicalMaterial({
+    color: new Color(0x9fd0ff),
+    roughness: 0.04,
+    metalness: 0.2,
+    transparent: true,
+    opacity: 0.55,
+    envMapIntensity: 1.6,
+  });
+  const ws = add(new BoxGeometry(w * 0.64, h * 0.34, 0.003), glass, 0, h * 0.38, -d * 0.255);
+  ws.rotation.x = 0.32;
+  const rw = add(new BoxGeometry(w * 0.6, h * 0.3, 0.003), glass, 0, h * 0.38, d * 0.195);
+  rw.rotation.x = -0.32;
+  // Racing stripes and aerial
+  const white = new MeshStandardMaterial({ color: new Color(0xf5f5f0), roughness: 0.35 });
+  for (const s of [-1, 1]) add(new PlainBox(w * 0.07, 0.001, d * 0.24), white, s * w * 0.07, h * 0.241, -d * 0.36);
+  add(new PlainCylinder(0.0009, 0.0012, 0.09, 6), dark, w * 0.3, h * 0.6 + 0.02, d * 0.2);
+  add(new PlainSphere(0.003, 10, 8), new MeshStandardMaterial({ color: new Color(0xff3b30), roughness: 0.3 }), w * 0.3, h * 0.6 + 0.066, d * 0.2);
 }

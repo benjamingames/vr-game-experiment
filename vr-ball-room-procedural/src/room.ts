@@ -62,6 +62,9 @@ import {
   canGeometry,
   canLabel,
   canLid,
+  detailCar,
+  detailDartboard,
+  detailedDart,
 } from './procedural/geometry.js';
 import { setTextureRenderer } from './procedural/textures.js';
 import { buildProceduralEnvironment, procEnv } from './procedural/env.js';
@@ -363,6 +366,7 @@ function buildRCCarAndRemote(world: World, tableTop: number) {
     carChassis.add(wheel);
   });
 
+  detailCar(carChassis, carW, carH, carD);
   const carEntity = world.createTransformEntity(carChassis);
   carEntity.addComponent(PhysicsShape, {
     shape: PhysicsShapeType.Box,
@@ -498,47 +502,9 @@ function buildRCCarAndRemote(world: World, tableTop: number) {
 
 /** Builds a throwable dart oriented along local Z (sharp tip at -Z, flights at +Z). */
 function createDartMesh(color: number): Mesh {
-  const barrelGeo = new CylinderGeometry(0.008, 0.011, 0.055, 16);
-  barrelGeo.rotateX(Math.PI / 2);
-  const barrel = new Mesh(barrelGeo, mat(color, 0.35));
-  barrel.castShadow = true;
-
-  // Sharp steel needle tip at -Z
-  const tipGeo = new CylinderGeometry(0.0045, 0.0008, 0.045, 12);
-  tipGeo.rotateX(Math.PI / 2);
-  const tip = new Mesh(tipGeo, mat(0xd4dce6, 0.2));
-  tip.position.set(0, 0, -0.065);
-  tip.castShadow = true;
-  barrel.add(tip);
-
-  // Brass/dark nose collar connecting barrel to tip
-  const noseGeo = new CylinderGeometry(0.011, 0.0045, 0.02, 16);
-  noseGeo.rotateX(Math.PI / 2);
-  const nose = new Mesh(noseGeo, mat(0xd4af37, 0.3));
-  nose.position.set(0, 0, -0.035);
-  barrel.add(nose);
-
-  // Slender rear shaft
-  const shaftGeo = new CylinderGeometry(0.0035, 0.005, 0.048, 12);
-  shaftGeo.rotateX(Math.PI / 2);
-  const shaft = new Mesh(shaftGeo, mat(0x22252a, 0.5));
-  shaft.position.set(0, 0, 0.046);
-  barrel.add(shaft);
-
-  // Crossed tail flights (fins) at +Z
-  const finMat = mat(color, 0.45);
-  const finH = new Mesh(new BoxGeometry(DART_WIDTH, 0.002, 0.042), finMat);
-  finH.position.set(0, 0, 0.066);
-  barrel.add(finH);
-
-  const finV = new Mesh(new BoxGeometry(0.002, DART_WIDTH, 0.042), finMat);
-  finV.position.set(0, 0, 0.066);
-  barrel.add(finV);
-
-  return barrel;
+  return detailedDart(color, DART_WIDTH);
 }
 
-/** Builds a concentric bullseye target dartboard mounted on the far wall. */
 function buildDartboard(world: World) {
   const { x, y, z, radius, thickness } = DARTBOARD;
 
@@ -573,6 +539,7 @@ function buildDartboard(world: World) {
   const post = new Mesh(new CylinderGeometry(0.045, 0.055, y, 16), mat(0x5c3a21, 0.7));
   post.position.set(0, -y / 2, -thickness * 0.4);
   board.add(post);
+  detailDartboard(board, radius, thickness, oak('#5e3c1f', '#b07a48', 6, 1, 0.45));
 
   world.createTransformEntity(board);
 }
