@@ -11,6 +11,8 @@ import {
   PBRSet,
   brushedMetalSet,
   detailNormal,
+  plasterSet,
+  rugSet,
   rubberSet,
   retile,
   tileSet,
@@ -95,7 +97,13 @@ export function oak(
 ): MeshStandardMaterial {
   let set = woodCache.get(planks);
   if (!set) {
-    set = woodSet('#9c8358', '#ffffff', { seed: planks * 7 + 3, planks, rough: 0.6, rings: 5 });
+    set = woodSet('#c2ab8a', '#ffffff', {
+      seed: planks * 7 + 3,
+      planks,
+      rough: 0.6,
+      rings: 9,
+      joints: planks >= 6,
+    });
     woodCache.set(planks, set);
   }
   const base =
@@ -103,8 +111,33 @@ export function oak(
       ? new MeshPhysicalMaterial({ clearcoat: 0.45, clearcoatRoughness: 0.25 })
       : new MeshStandardMaterial();
   const m = withSet(base, retile(set, repeatX, repeatY, rotation), 0.9);
-  m.color = new Color(lightHex);
+  // Natural, slightly desaturated timber rather than orange stain
+  const tint = new Color(lightHex);
+  const hsl = { h: 0, s: 0, l: 0 };
+  tint.getHSL(hsl);
+  tint.setHSL(hsl.h + 0.008, hsl.s * 0.62, Math.min(0.8, hsl.l * 1.08));
+  m.color = tint;
   m.roughness = Math.min(1, rough / 0.6);
+  return m;
+}
+
+let plasterCache: PBRSet | null = null;
+/** Matte painted plaster in a warm grey. */
+export function plaster(repeatX = 3, repeatY = 1.5): MeshStandardMaterial {
+  plasterCache ??= plasterSet();
+  const m = withSet(new MeshStandardMaterial({ color: new Color(0xb4ada1) }), retile(plasterCache, repeatX, repeatY), 0.5);
+  return m;
+}
+
+/** Matte oak plank floor with staggered end joints. */
+export function floorPlanks(): MeshStandardMaterial {
+  return oak('#000000', '#c9a57a', 5, 2.5, 0.62, 6);
+}
+
+let rugCache: PBRSet | null = null;
+export function rug(): MeshStandardMaterial {
+  rugCache ??= rugSet();
+  const m = withSet(new MeshStandardMaterial(), rugCache, 1.3);
   return m;
 }
 

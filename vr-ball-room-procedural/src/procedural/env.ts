@@ -79,6 +79,8 @@ export const procEnv = {
   /** Lamps, light shafts and dust that belong to the indoor room (hidden in the Monke arena). */
   roomGroup: new Group(),
   lampGlow: null as MeshStandardMaterial | null,
+  /** Concealed LED strips: the additive wall wash and the emissive strip itself. */
+  cove: null as { glow: Material; strip: MeshStandardMaterial } | null,
   lampLights: [] as PointLight[],
   /** The warm ceiling point light that room.ts creates for night time. */
   mainLamp: null as PointLight | null,
@@ -268,7 +270,7 @@ void main() {
   float edge = sin( 3.14159 * clamp( vUv.x, 0.0, 1.0 ) );
   float streak = 0.55 + 0.45 * n1( vUv.x * 23.0 + uTime * 0.05 ) * n1( vUv.x * 61.0 - uTime * 0.03 + 7.0 );
   float fall = smoothstep( 0.0, 0.06, vT ) * ( 1.0 - 0.55 * vT );
-  float a = edge * edge * streak * fall * 0.06 * uStrength;
+  float a = edge * edge * streak * fall * 0.032 * uStrength;
   gl_FragColor = vec4( uColor * a, 1.0 );
 }
 `;
@@ -546,17 +548,21 @@ export class ProcEnvSystem extends createSystem({}) {
     const dl = this.dirLight!;
     // Sun / moon. The reflection probe supplies bounce light, so the flat fill is kept low.
     dl.color.setHex(night ? 0x8fb0ff : 0xfff0d8);
-    dl.intensity = night ? (monke ? 1.1 : 0.55) : monke ? 3.2 : 2.7;
+    dl.intensity = night ? (monke ? 1.1 : 0.55) : monke ? 3.2 : 3.0;
     if (this.hemiLight) {
       this.hemiLight.color.setHex(night ? 0x1c2a4a : 0xe6e9f2);
       this.hemiLight.groundColor.setHex(night ? 0x2a2018 : 0xa89878);
-      this.hemiLight.intensity = night ? (monke ? 0.4 : 0.22) : monke ? 0.7 : 1.15;
+      this.hemiLight.intensity = night ? (monke ? 0.4 : 0.22) : monke ? 0.7 : 0.8;
     }
     skyUniforms.uNight.value = night ? 1 : 0;
     skyUniforms.uGain.value = 1.7;
     beamUniforms.uStrength.value = night ? 0.22 : 1;
     beamUniforms.uColor.value.setRGB(night ? 0.55 : 1, night ? 0.68 : 0.93, night ? 1 : 0.8);
     if (procEnv.lampGlow) procEnv.lampGlow.emissiveIntensity = night ? 7 : 0;
+    if (procEnv.cove) {
+      procEnv.cove.glow.opacity = night ? 0.9 : 0.6;
+      procEnv.cove.strip.emissiveIntensity = night ? 5 : 2.5;
+    }
     for (const l of procEnv.lampLights) l.intensity = night ? 2.2 : 0;
     if (procEnv.mainLamp) {
       procEnv.mainLamp.intensity = night ? 9 : 0;

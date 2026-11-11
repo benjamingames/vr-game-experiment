@@ -1,4 +1,5 @@
 import {
+  BoxGeometry as FlatBox,
   CanvasTexture,
   Color,
   DirectionalLight,
@@ -54,6 +55,7 @@ import {
 } from './ball-components.js';
 import { buildMaze, mazeHooks } from './maze.js';
 import { buildProceduralArena } from './procedural/arena.js';
+import { buildDecor } from './procedural/decor.js';
 import {
   BoxGeometry,
   CylinderGeometry,
@@ -78,7 +80,8 @@ import { setTextureRenderer } from './procedural/textures.js';
 import { buildProceduralEnvironment, procEnv } from './procedural/env.js';
 import {
   canMetal,
-  floorTiles,
+  floorPlanks,
+  plaster,
   oak,
   plastic,
   rubberBall,
@@ -147,6 +150,7 @@ export function buildRoom(world: World) {
 
   // Tiled light-gray floor, oak wood paneled walls, arched ceiling with 2 skylights & 3D clouds
   buildArchitecture(world);
+  buildDecor();
 
   // Table in front of the player
   const tableEntity = staticBox(
@@ -1003,7 +1007,7 @@ export class ResetSystem extends createSystem({
 
 function createTiledFloorMaterial(): MeshStandardMaterial {
   // Polished marble-veined stone tiles: albedo, normal and roughness are all synthesized.
-  return floorTiles();
+  return floorPlanks();
 }
 
 function createOakMaterial(
@@ -1034,6 +1038,7 @@ function buildArchitecture(world: World) {
 
   const floorMat = createTiledFloorMaterial();
   const oakWallMat = createOakMaterial('#a96d35', '#7e4b1c', '#c6884a', 4, 2, 0.55);
+  const plasterMat = plaster(3, 1.5);
   const oakTrimMat = createOakMaterial('#834e1f', '#5e3512', '#9e632d', 2, 1, 0.48);
   const oakPanelMat = createOakMaterial('#b87b40', '#8c5522', '#d19558', 1, 1, 0.5);
   const oakCeilingMat = createOakMaterial('#9f642c', '#744419', '#ba7c40', 2, 3, 0.55);
@@ -1059,7 +1064,18 @@ function buildArchitecture(world: World) {
     alongX: boolean,
     inwardSign: number,
   ) => {
-    const wallMesh = new Mesh(new BoxGeometry(...size), oakWallMat);
+    const wallMesh = new Mesh(new BoxGeometry(...size), plasterMat);
+    // Oak backing for the wainscot (the wall above the chair rail is painted plaster)
+    const wainscot = new Mesh(
+      alongX ? new BoxGeometry(W, 1.06, 0.012) : new BoxGeometry(0.012, 1.06, D),
+      oakWallMat,
+    );
+    wainscot.position.set(
+      alongX ? 0 : (t / 2 + 0.003) * inwardSign,
+      -H / 2 + 0.56,
+      alongX ? (t / 2 + 0.003) * inwardSign : 0,
+    );
+    wallMesh.add(wainscot);
     wallMesh.position.set(...pos);
     wallMesh.castShadow = true;
     wallMesh.receiveShadow = true;
@@ -1092,12 +1108,12 @@ function buildArchitecture(world: World) {
     for (let i = 0; i <= bays; i++) {
       const coord = -span / 2 + i * bayWidth;
       const stileGeo = alongX
-        ? new BoxGeometry(0.07, H, 0.02)
-        : new BoxGeometry(0.02, H, 0.07);
+        ? new BoxGeometry(0.07, 1.06, 0.02)
+        : new BoxGeometry(0.02, 1.06, 0.07);
       const stile = new Mesh(stileGeo, oakTrimMat);
       stile.position.set(
         alongX ? coord : faceOffset,
-        0,
+        -H / 2 + 0.56,
         alongX ? faceOffset : coord,
       );
       wallMesh.add(stile);
@@ -1128,7 +1144,7 @@ function buildArchitecture(world: World) {
           -H / 2 + 1.98,
           alongX ? faceOffset * 0.85 : bayCenter,
         );
-        wallMesh.add(upperPanel);
+        void upperPanel; // upper wall is flat plaster now
       }
     }
 
@@ -1141,8 +1157,8 @@ function buildArchitecture(world: World) {
         const archH = archHeightAtX(sx) - H;
         if (archH > 0.02) {
           const gableStrip = new Mesh(
-            new BoxGeometry(stripW + 0.01, archH, t),
-            oakWallMat,
+            new FlatBox(stripW + 0.01, archH, t),
+            plasterMat,
           );
           gableStrip.position.set(sx, H / 2 + archH / 2, 0);
           gableStrip.castShadow = true;

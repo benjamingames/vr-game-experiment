@@ -284,13 +284,13 @@ const MID = Math.max(256, QUALITY.texSize / 2);
 export function woodSet(
   darkHex: string,
   lightHex: string,
-  opts: { seed?: number; planks?: number; rings?: number; rough?: number } = {},
+  opts: { seed?: number; planks?: number; rings?: number; rough?: number; joints?: boolean } = {},
 ): PBRSet {
   return buildSet(
     BIG,
     2.4,
     /* glsl */ `
-uniform vec3 uDark; uniform vec3 uLight; uniform float uSeed, uPlanks, uRings, uRough;
+uniform vec3 uDark; uniform vec3 uLight; uniform float uSeed, uPlanks, uRings, uRough, uJoints;
 void surf( vec2 uv, out vec3 c, out float h, out float r, out float m ) {
   float u = uv.x, v = uv.y, tint = 0.0, groove = 0.0;
   if ( uPlanks > 0.5 ) {
@@ -298,9 +298,13 @@ void surf( vec2 uv, out vec3 c, out float h, out float r, out float m ) {
     tint = ih( vec2( pi, 7.0 ), uSeed ) - 0.5;
     v += ih( vec2( pi, 3.0 ), uSeed );
     groove = 1.0 - smoothstep( 0.0, 0.02, min( f, 1.0 - f ) );
+    if ( uJoints > 0.5 ) {
+      float ej = fract( uv.y + ih( vec2( pi, 11.0 ), uSeed ) );
+      groove = max( groove, 1.0 - smoothstep( 0.0, 0.003, min( ej, 1.0 - ej ) ) );
+    }
   }
   float warp = fbm( vec2( u * 6.0, v * 2.0 ), vec2( 6.0, 2.0 ), 5, uSeed );
-  float ringc = u * uRings + warp * 2.4 + tint * 9.0;
+  float ringc = u * uRings + warp * 1.1 + tint * 9.0;
   float ring = 0.5 + 0.5 * sin( ringc * 6.2831853 );
   ring = mix( ring, smoothstep( 0.15, 0.9, ring ), 0.6 );            // sharper late-wood lines
   float fiber = fbm( vec2( u * 128.0, v * 5.0 ), vec2( 128.0, 5.0 ), 5, uSeed + 5.0 );
@@ -308,7 +312,7 @@ void surf( vec2 uv, out vec3 c, out float h, out float r, out float m ) {
   float fleck = smoothstep( 0.72, 0.8, vnoise( vec2( u * 90.0, v * 400.0 ), vec2( 90.0, 400.0 ), uSeed + 13.0 ) ) * 0.5;
   float knotd = cells( vec2( u * 2.0, v * 1.0 ) + warp * 0.3, vec2( 2.0, 1.0 ), uSeed + 21.0 );
   float knot = smoothstep( 0.05, 0.012, knotd ) * step( 0.55, ih( floor( vec2( u * 2.0, v ) ), uSeed + 31.0 ) );
-  float t = clamp( ring * 0.62 + fiber * 0.42 - 0.03 + fleck * 0.12, 0.0, 1.0 );
+  float t = clamp( ring * 0.42 + fiber * 0.5 + 0.06 + fleck * 0.1, 0.0, 1.0 );
   t = mix( t, 0.1 + 0.3 * sin( knotd * 260.0 ), knot );
   float shade = ( 1.0 + tint * 0.22 ) * ( 1.0 - pore * 0.55 ) * ( 1.0 - groove * 0.65 ) * ( 1.0 - knot * 0.35 );
   c = mix( uDark, uLight, t ) * shade;
@@ -323,6 +327,7 @@ void surf( vec2 uv, out vec3 c, out float h, out float r, out float m ) {
       uPlanks: { value: opts.planks ?? 0 },
       uRings: { value: opts.rings ?? 7 },
       uRough: { value: opts.rough ?? 0.5 },
+      uJoints: { value: opts.joints ? 1 : 0 },
     },
   );
 }
@@ -519,6 +524,53 @@ void surf( vec2 uv, out vec3 c, out float h, out float r, out float m ) {
   c = vec3( 1.0 - seam * 0.55 ) * ( 0.93 + peb * 0.07 );
   h = peb * 0.6 * ( 1.0 - seam ) - seam * 1.5;
   r = 0.75 + seam * 0.2 - peb * 0.1;
+  m = 0.0;
+}`,
+    { uSeed: { value: seed } },
+  );
+}
+
+/** Painted plaster: roller stipple, faint trowel waves and hairline flaws. */
+export function plasterSet(seed = 81): PBRSet {
+  return buildSet(
+    MID,
+    1.6,
+    /* glsl */ `
+uniform float uSeed;
+void surf( vec2 uv, out vec3 c, out float h, out float r, out float m ) {
+  float stipple = fbm( uv * 420.0, vec2( 420.0 ), 3, uSeed );
+  float wave = fbm( uv * 5.0, vec2( 5.0 ), 4, uSeed + 3.0 );
+  float flaw = 0.0;
+  float g = 0.95 + ( wave - 0.5 ) * 0.035 + ( stipple - 0.5 ) * 0.025;
+  c = vec3( g );
+  h = stipple * 0.5 + wave * 0.25 - flaw;
+  r = 0.86 + stipple * 0.1;
+  m = 0.0;
+}`,
+    { uSeed: { value: seed } },
+  );
+}
+
+/** Flat-woven wool rug: alternating yarn stripes with an over-under weave and fuzz. */
+export function rugSet(seed = 91): PBRSet {
+  return buildSet(
+    BIG,
+    7,
+    /* glsl */ `
+uniform float uSeed;
+void surf( vec2 uv, out vec3 c, out float h, out float r, out float m ) {
+  float rows = 190.0;
+  float row = floor( uv.y * rows );
+  float fy = fract( uv.y * rows );
+  float stripe = mod( row, 2.0 );
+  float fx = fract( uv.x * 380.0 + stripe * 0.5 );
+  float yarn = sin( fy * 3.14159 ) * ( 0.6 + 0.4 * sin( fx * 3.14159 ) );
+  float fuzz = fbm( uv * 600.0, vec2( 600.0 ), 3, uSeed );
+  float tone = fbm( uv * 6.0, vec2( 6.0 ), 3, uSeed + 4.0 );
+  vec3 a = vec3( 0.36, 0.36, 0.36 ), b = vec3( 0.6, 0.585, 0.56 );
+  c = mix( a, b, stripe ) * ( 0.72 + yarn * 0.3 + ( fuzz - 0.5 ) * 0.22 ) * ( 0.94 + tone * 0.12 );
+  h = yarn + fuzz * 0.35;
+  r = 0.97;
   m = 0.0;
 }`,
     { uSeed: { value: seed } },
