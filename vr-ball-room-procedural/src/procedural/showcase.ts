@@ -31,7 +31,7 @@ import {
 import { BoxOpts, LightBake } from './bake.js';
 import { artTexture, buildPlant, vase } from './decor.js';
 import { EnvZone, procEnv } from './env.js';
-import { fabric, marble, oak, plaster, rug } from './materials.js';
+import { fabric, glossFloor, marble, oak, plaster, rug } from './materials.js';
 import { QUALITY } from './quality.js';
 
 export const GALLERY_ORIGIN = new Vector3(-300, 0, 0);
@@ -126,13 +126,15 @@ export function buildShowcase(world: World) {
   // ---- Materials (with the average colour the bake uses for bounced light) ----
   const wall = plaster(1, 1);
   wall.color.setHex(0xd9d3c8);
-  wall.normalScale.set(0.12, 0.12);
+  wall.normalScale.set(0.45, 0.45);
   const wallO: BoxOpts = { albedo: [0.7, 0.67, 0.62], uv: [2.2, 2.2] };
   const ceil = plaster(1, 1);
   ceil.color.setHex(0xf2efe9);
-  ceil.normalScale.set(0.1, 0.1);
+  ceil.normalScale.set(0.2, 0.2);
   const ceilO: BoxOpts = { albedo: [0.86, 0.85, 0.82], uv: [2.2, 2.2] };
-  const floor = oak('#000000', '#dcc09a', 1, 1, 0.58, 6);
+  const floor = oak('#000000', '#dcc09a', 1, 1, 0.38, 6);
+  floor.normalScale.set(1.5, 1.5);
+  glossFloor(floor);
   const floorO: BoxOpts = { albedo: [0.5, 0.38, 0.25], uv: [1.2, 2.4] };
   const timber = oak('#000000', '#c3a078', 1, 1, 0.55);
   const timberO: BoxOpts = { albedo: [0.55, 0.43, 0.3], uv: [0.5, 1.4] };
@@ -188,6 +190,40 @@ export function buildShowcase(world: World) {
   // Terrace outside the window, with a parapet that hides the horizon
   B(deck, -4.7, -0.2, 3.7, 4.7, -0.02, 7.2, { albedo: [0.42, 0.41, 0.39], uv: [2, 2], spacing: 0.3 });
   B(deck, -4.7, -0.02, 7.0, 4.7, 1.0, 7.2, { albedo: [0.42, 0.41, 0.39], uv: [2, 2], spacing: 0.3 });
+
+  // ---- Relief: dropped ceiling border with a light cove, and panel mouldings on the walls ----
+  const dropY = H - 0.16;
+  B(ceil, -4.5, dropY, -3.5, 4.5, H, -3.08, ceilO);
+  B(ceil, -4.5, dropY, 3.08, 4.5, H, 3.5, ceilO);
+  B(ceil, -4.5, dropY, -3.08, -4.08, H, 3.08, ceilO);
+  B(ceil, 4.08, dropY, -3.08, 4.5, H, 3.08, ceilO);
+  const cove: BoxOpts = { emissive: [16, 12.5, 8], albedo: [0, 0, 0] };
+  B(led, -4.06, dropY + 0.07, -3.075, 4.06, dropY + 0.085, -3.06, cove);
+  B(led, -4.06, dropY + 0.07, 3.06, 4.06, dropY + 0.085, 3.075, cove);
+  B(led, -4.075, dropY + 0.07, -3.06, -4.06, dropY + 0.085, 3.06, cove);
+  B(led, 4.06, dropY + 0.07, -3.06, 4.075, dropY + 0.085, 3.06, cove);
+  // Raised picture-frame mouldings: [wall x, inward sign, z0, z1, y0, y1]
+  const mould: Array<[number, number, number, number, number, number]> = [
+    [-4.5, 1, -3.3, -1.55, 0.3, 2.85],
+    [-4.5, 1, -1.47, -0.62, 0.3, 2.85],
+    [-4.5, 1, -0.54, 0.16, 0.3, 2.85],
+    [4.5, -1, -3.3, -1.2, 0.3, 2.85],
+    [4.5, -1, -1.1, -0.2, 0.3, 2.85],
+    [4.5, -1, -0.1, 0.66, 0.3, 2.85],
+  ];
+  const mw = 0.034;
+  const md = 0.016;
+  for (const [wx, sgn, z0, z1, y0, y1] of mould) {
+    const xa = sgn > 0 ? wx : wx - md;
+    const xb = sgn > 0 ? wx + md : wx;
+    B(wall, xa, y0, z0, xb, y0 + mw, z1, wallO);
+    B(wall, xa, y1 - mw, z0, xb, y1, z1, wallO);
+    B(wall, xa, y0 + mw, z0, xb, y1 - mw, z0 + mw, wallO);
+    B(wall, xa, y0 + mw, z1 - mw, xb, y1 - mw, z1, wallO);
+  }
+  // Shadow gap: a dark recess line where the walls meet the dropped ceiling
+  B(dark, -4.5, dropY - 0.012, -3.5, -4.488, dropY, 3.5, { ...darkO, noOcclude: true });
+  B(dark, 4.488, dropY - 0.012, -3.5, 4.5, dropY, 3.5, { ...darkO, noOcclude: true });
 
   // ---- Venetian blind over the left two window bays ---------------------------
   const pitch = fine ? 0.045 : 0.09;

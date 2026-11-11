@@ -151,6 +151,8 @@ void main() {
   // Every vertex uses the same ray directions in a given pass. That trades per-vertex noise
   // (blotchy triangles) for a smooth result that sharpens as passes accumulate.
   uint seed = uint( uFrame ) * 26699u + 1u;
+  uint ps = uint( px.x ) * 1973u + uint( px.y ) * 9277u + 7u;
+  vec3 lampShift = vec3( rnd( ps ), rnd( ps ), rnd( ps ) );
   vec3 sum = vec3( 0.0 );
   for ( int i = 0; i < RAYS; i++ ) {
     float r1 = rnd( seed ), r2 = rnd( seed );
@@ -175,7 +177,9 @@ void main() {
       int j = uEmId[ ( i + int( uFrame ) ) % uEmN ];
       vec3 mn = texelFetch( uBox, ivec2( 0, j ), 0 ).xyz;
       vec3 mx = texelFetch( uBox, ivec2( 1, j ), 0 ).xyz;
-      vec3 q = mix( mn, mx, vec3( rnd( seed ), rnd( seed ), rnd( seed ) ) );
+      // Shift the shared sample by a per-vertex offset so long strips are covered evenly
+      // instead of every vertex aiming at the same few spots (which leaves scallops)
+      vec3 q = mix( mn, mx, fract( vec3( rnd( seed ), rnd( seed ), rnd( seed ) ) + lampShift ) );
       vec3 dv = q - p;
       float d2 = dot( dv, dv );
       vec3 dl = dv / sqrt( d2 );

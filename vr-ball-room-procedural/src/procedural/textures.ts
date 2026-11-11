@@ -297,7 +297,9 @@ void surf( vec2 uv, out vec3 c, out float h, out float r, out float m ) {
     float pi = floor( u * uPlanks ), f = fract( u * uPlanks );
     tint = ih( vec2( pi, 7.0 ), uSeed ) - 0.5;
     v += ih( vec2( pi, 3.0 ), uSeed );
-    groove = 1.0 - smoothstep( 0.0, 0.02, min( f, 1.0 - f ) );
+    groove = 1.0 - smoothstep( 0.0, 0.028, min( f, 1.0 - f ) );
+    // Boards cup slightly across their width, so each one catches the light on its own
+    tint += 0.0;
     if ( uJoints > 0.5 ) {
       float ej = fract( uv.y + ih( vec2( pi, 11.0 ), uSeed ) );
       groove = max( groove, 1.0 - smoothstep( 0.0, 0.003, min( ej, 1.0 - ej ) ) );
@@ -316,8 +318,12 @@ void surf( vec2 uv, out vec3 c, out float h, out float r, out float m ) {
   t = mix( t, 0.1 + 0.3 * sin( knotd * 260.0 ), knot );
   float shade = ( 1.0 + tint * 0.22 ) * ( 1.0 - pore * 0.55 ) * ( 1.0 - groove * 0.65 ) * ( 1.0 - knot * 0.35 );
   c = mix( uDark, uLight, t ) * shade;
-  h = t * 0.5 + fiber * 0.22 - pore * 0.6 - groove * 1.8 - knot * 0.3;
-  r = min( 1.0, uRough + ( 1.0 - t ) * 0.16 + pore * 0.3 + groove * 0.3 );
+  float cup = uPlanks > 0.5 ? sin( fract( u * uPlanks ) * 3.14159 ) : 0.0;
+  h = t * 0.5 + fiber * 0.22 - pore * 0.6 - groove * 2.6 - knot * 0.3 + cup * 1.4;
+  // Finish wears unevenly: traffic paths and dull patches break up the reflections
+  float wear = fbm( uv * 3.0, vec2( 3.0 ), 4, uSeed + 40.0 ) - 0.5;
+  float scuff = smoothstep( 0.9, 0.97, vnoise( vec2( uv.x * 40.0 + uv.y * 9.0, uv.y * 300.0 ), vec2( 49.0, 300.0 ), uSeed + 44.0 ) );
+  r = clamp( uRough + ( 1.0 - t ) * 0.16 + pore * 0.3 + groove * 0.3 + wear * 0.42 + scuff * 0.2, 0.08, 1.0 );
   m = 0.0;
 }`,
     {
@@ -538,13 +544,17 @@ export function plasterSet(seed = 81): PBRSet {
     /* glsl */ `
 uniform float uSeed;
 void surf( vec2 uv, out vec3 c, out float h, out float r, out float m ) {
+  // Hand-trowelled finish: overlapping sweeps leave ridges, burnished patches and matte patches
   float stipple = fbm( uv * 420.0, vec2( 420.0 ), 3, uSeed );
-  float wave = fbm( uv * 5.0, vec2( 5.0 ), 4, uSeed + 3.0 );
-  float flaw = 0.0;
-  float g = 0.95 + ( wave - 0.5 ) * 0.035 + ( stipple - 0.5 ) * 0.025;
-  c = vec3( g );
-  h = stipple * 0.5 + wave * 0.25 - flaw;
-  r = 0.86 + stipple * 0.1;
+  float sweepA = fbm( vec2( uv.x * 7.0, uv.y * 3.0 ), vec2( 7.0, 3.0 ), 5, uSeed + 3.0 );
+  float sweepB = fbm( vec2( uv.x * 3.0, uv.y * 8.0 ), vec2( 3.0, 8.0 ), 5, uSeed + 13.0 );
+  float trowel = mix( sweepA, sweepB, 0.45 );
+  float ridge = pow( 1.0 - abs( 2.0 * trowel - 1.0 ), 4.0 );
+  float cloud = fbm( uv * 2.0, vec2( 2.0 ), 3, uSeed + 21.0 );
+  float g = 0.94 + ( trowel - 0.5 ) * 0.1 + ( cloud - 0.5 ) * 0.05 + ( stipple - 0.5 ) * 0.025 - ridge * 0.03;
+  c = vec3( g, g * 0.997, g * 0.99 );
+  h = trowel * 1.2 + ridge * 0.5 + stipple * 0.3;
+  r = clamp( 0.52 + trowel * 0.42 - ridge * 0.2 + stipple * 0.08, 0.2, 1.0 );
   m = 0.0;
 }`,
     { uSeed: { value: seed } },

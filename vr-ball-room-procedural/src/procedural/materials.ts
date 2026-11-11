@@ -133,7 +133,20 @@ export function plaster(repeatX = 3, repeatY = 1.5): MeshStandardMaterial {
 
 /** Matte oak plank floor with staggered end joints. */
 export function floorPlanks(): MeshStandardMaterial {
-  return oak('#000000', '#c9a57a', 5, 2.5, 0.62, 6);
+  // Satin lacquer: glossy enough to mirror the windows, uneven enough not to look like plastic
+  const m = oak('#000000', '#c9a57a', 5, 2.5, 0.4, 6);
+  m.normalScale.set(1.5, 1.5);
+  glossFloor(m);
+  return m;
+}
+
+/** Turns up the lacquer layer on a floor material (no-op on the low tier). */
+export function glossFloor(m: MeshStandardMaterial) {
+  const p = m as MeshPhysicalMaterial;
+  if (!p.isMeshPhysicalMaterial) return;
+  p.clearcoat = 0.75;
+  p.clearcoatRoughness = 0.1;
+  p.envMapIntensity = 1.25;
 }
 
 let rugCache: PBRSet | null = null;
