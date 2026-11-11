@@ -73,6 +73,8 @@ uniform vec3 uSkyZ;
 uniform vec3 uSkyH;
 uniform vec3 uGround;
 uniform vec3 uAmb;
+uniform int uEmN;
+uniform int uEmId[24];
 const float PI = 3.14159265;
 
 float rnd( inout uint s ) {
@@ -117,6 +119,21 @@ bool occluded( vec3 ro, vec3 rd ) {
   return false;
 }
 
+// Any-hit test up to tmax, ignoring one box (the lamp being sampled)
+bool blocked( vec3 ro, vec3 rd, float tmax, int skip ) {
+  vec3 inv = 1.0 / rd;
+  for ( int i = 0; i < uBoxN; i++ ) {
+    if ( i == skip ) continue;
+    vec3 mn = texelFetch( uBox, ivec2( 0, i ), 0 ).xyz;
+    vec3 mx = texelFetch( uBox, ivec2( 1, i ), 0 ).xyz;
+    vec3 t0 = ( mn - ro ) * inv, t1 = ( mx - ro ) * inv;
+    vec3 a = min( t0, t1 ), b = max( t0, t1 );
+    float tn = max( max( a.x, a.y ), a.z ), tf = min( min( b.x, b.y ), b.z );
+    if ( tn < tf && tn > 1e-4 && tn < tmax ) return true;
+  }
+  return false;
+}
+
 vec3 sky( vec3 d ) {
   if ( d.y < 0.0 ) return uGround;
   return mix( uSkyH, uSkyZ, pow( d.y, 0.45 ) );
@@ -142,7 +159,8 @@ void main() {
     float t; int id; vec3 hn;
     if ( trace( p, d, t, id, hn ) ) {
       vec3 alb = texelFetch( uBox, ivec2( 2, id ), 0 ).rgb;
-      vec3 em = texelFetch( uBox, ivec2( 3, id ), 0 ).rgb * uEmScale;
+      // Lamps are sampled directly below, so a random ray that happens to hit one adds nothing
+      vec3 em = uEmN > 0 ? vec3( 0.0 ) : texelFetch( uBox, ivec2( 3, id ), 0 ).rgb * uEmScale;
       vec3 hp = p + d * t + hn * 0.003;
       vec3 E = uAmb;
       float ndl = dot( hn, uSunDir );
@@ -150,6 +168,29 @@ void main() {
       sum += em + alb * E / PI;
     } else {
       sum += sky( d );
+    }
+    // Direct light from one lamp per ray: aim at a random point on it (far less noisy than
+    // waiting for random rays to find small, bright emitters)
+    if ( uEmN > 0 ) {
+      int j = uEmId[ ( i + int( uFrame ) ) % uEmN ];
+      vec3 mn = texelFetch( uBox, ivec2( 0, j ), 0 ).xyz;
+      vec3 mx = texelFetch( uBox, ivec2( 1, j ), 0 ).xyz;
+      vec3 q = mix( mn, mx, vec3( rnd( seed ), rnd( seed ), rnd( seed ) ) );
+      vec3 dv = q - p;
+      float d2 = dot( dv, dv );
+      vec3 dl = dv / sqrt( d2 );
+      float cr = dot( n, dl );
+      if ( cr > 0.0 ) {
+        vec3 sz = mx - mn;
+        float thin = min( sz.x, min( sz.y, sz.z ) );
+        vec3 en = sz.x == thin ? vec3( 1.0, 0.0, 0.0 ) : ( sz.y == thin ? vec3( 0.0, 1.0, 0.0 ) : vec3( 0.0, 0.0, 1.0 ) );
+        float area = sz.x * sz.y * sz.z / thin;
+        float ce = max( abs( dot( en, dl ) ), 0.15 );
+        if ( !blocked( p, dl + 1e-5, sqrt( d2 ) - 0.01, j ) ) {
+          vec3 em = texelFetch( uBox, ivec2( 3, j ), 0 ).rgb * uEmScale;
+          sum += em * area * cr * ce / max( d2, 0.03 ) / PI * float( uEmN );
+        }
+      }
     }
   }
   vec3 L = sum / float( RAYS );
@@ -362,6 +403,11 @@ export class LightBake {
       return rt;
     };
     this.rt = [mk(), mk()];
+    // Boxes that emit light, sampled directly by the bake (largest first, at most 24)
+    const emitters: number[] = [];
+    for (let i = 0; i < this.boxCount; i++) {
+      if (this.occ[i * 16 + 12] + this.occ[i * 16 + 13] + this.occ[i * 16 + 14] > 0 && emitters.length < 24) emitters.push(i);
+    }
     this.mat = new ShaderMaterial({
       defines: { RAYS: QUALITY.high ? 6 : 4 },
       uniforms: {
@@ -378,6 +424,8 @@ export class LightBake {
         uSkyH: { value: this.skyHorizon },
         uGround: { value: this.ground },
         uAmb: { value: this.ambient },
+        uEmN: { value: emitters.length },
+        uEmId: { value: emitters.concat(new Array(24 - emitters.length).fill(0)) },
       },
       vertexShader: 'void main() { gl_Position = vec4( position.xy, 0.0, 1.0 ); }',
       fragmentShader: BAKE_FRAG,

@@ -10,9 +10,14 @@ audio. Everything is generated at load time by code in `src/procedural/`:
 | `materials.ts` | Physically based materials (clear coat, sheen, glass) built on those sets |
 | `env.ts` | Sky shader (sun, moon, stars, moving clouds), reflection probe with box-projected reflections and one bounce of indirect light, light shafts, dust, chandelier and sconces |
 | `arena.ts` | "Hollow Grove", the Monke Map: terrain, hollow stump, climbable trees, boulders, instanced grass with wind |
+| `decor.ts` | Main-room dressing: potted trees, shelves with books, vases and art, rug, LED wall washes, painted corner shadows |
+| `bake.ts` | GPU light bake: ray-traced sky light, lamp light, bounced sun and ambient occlusion for box-built scenery |
+| `showcase.ts` | The Gallery, a second room with baked lighting, reached through the door on the back wall |
 | `quality.ts` | High / Low tier. Auto-detected (standalone headsets get Low); switch with the bottom-left button or `?quality=high|low|auto` |
 
-Debug URL parameters: `?dbg=night,monke&look=pitch,yaw&pos=x,y,z`.
+**Building on this:** read [`PROCEDURAL_GUIDE.md`](PROCEDURAL_GUIDE.md) (recipes, helper scripts in `../tools/`, known traps).
+
+Debug URL parameters: `?dbg=night,monke,gallery,bakefast,info&look=pitch,yaw&pos=x,y,z`.
 
 The original notes follow.
 

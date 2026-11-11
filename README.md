@@ -17,6 +17,10 @@ Every push to `main` runs `.github/workflows/deploy-pages.yml`, which builds
 `vr-ball-game/` and `vr-ball-room-procedural/`, copies `diggingahole/` as-is, adds the landing page (`index.html`),
 and publishes everything as one Pages site.
 
+## Helper scripts
+
+`tools/` has scripts for the procedural game: `build.sh`, `serve.sh`, `shot.sh`, `views.sh`, `dump.sh`. See `vr-ball-room-procedural/PROCEDURAL_GUIDE.md`.
+
 ## Adding another game
 
 1. Make a new folder at the repo root (a single `index.html` works).
