@@ -33,6 +33,7 @@ light bake in a few frames), `info` (state in the page title, read by `tools/dum
 | `decor.ts` | Plants, shelves with books/vases/art, rug, LED wall washes, painted corner shadows (main room) | Dressing a room without baked lighting |
 | `env.ts` | Sky shader, reflection probe, sun, light shafts, dust, lamps, lighting zones | Anything about light, sky or reflections |
 | `bake.ts` | GPU light bake for box-built scenery | Real soft lighting and ambient occlusion |
+| `furniture.ts` | Modelled furniture: `pillow()` (rounded, stuffed cushion shape), task chair, floor lamp, sofa cushions, desk accessories | Any furniture: build from `pillow`, lathe profiles and mixed materials, never plain boxes |
 | `showcase.ts` | The Gallery room, its doors and its system | The reference for building a baked room |
 | `arena.ts` | The outdoor Monke Map | Terrain, trees, rocks, grass |
 
@@ -50,6 +51,13 @@ takes part in the bake. `albedo` is the colour bounced light picks up; `emissive
 `uv` is metres of surface per texture repeat. Leave openings as gaps between boxes: that is how
 sky light gets in. Curved props are ordinary meshes added to the group; give them a rough
 `bake.addOccluder(min, max, albedo, [0,0,0])` box so they cast soft shadow.
+
+**New modelled furniture.** Add a function to `furniture.ts` that returns a `Group` standing on
+y = 0. Use `pillow(w, h, d, radius, puff)` for anything upholstered or soft-edged, `lathe()` for
+turned or round parts, and a different material per real-world material. In the room: position it,
+add it to the props group, call `bake.bakeObject(group)` so it gets baked light, and add one or two
+rough `bake.addOccluder` boxes so it shadows the floor and walls. Do not share its materials with
+unbaked meshes.
 
 **New room.** Copy the shape of `showcase.ts`: build with a `LightBake`, add invisible
 `PlainBox` proxies with `LocomotionEnvironment` for walking, define an `EnvZone` (probe position,

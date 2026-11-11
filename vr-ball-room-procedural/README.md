@@ -12,6 +12,7 @@ audio. Everything is generated at load time by code in `src/procedural/`:
 | `arena.ts` | "Hollow Grove", the Monke Map: terrain, hollow stump, climbable trees, boulders, instanced grass with wind |
 | `decor.ts` | Main-room dressing: potted trees, shelves with books, vases and art, rug, LED wall washes, painted corner shadows |
 | `bake.ts` | GPU light bake: ray-traced sky light, lamp light, bounced sun and ambient occlusion for box-built scenery |
+| `furniture.ts` | Modelled furniture with real contours: task chair, floor lamp, sofa cushions, desk accessories |
 | `showcase.ts` | The Gallery, a second room with baked lighting, reached through the door on the back wall |
 | `quality.ts` | High / Low tier. Auto-detected (standalone headsets get Low); switch with the bottom-left button or `?quality=high|low|auto` |
 

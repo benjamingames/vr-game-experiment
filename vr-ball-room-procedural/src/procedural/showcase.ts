@@ -31,6 +31,7 @@ import {
 import { BoxOpts, LightBake } from './bake.js';
 import { artTexture, buildPlant, vase } from './decor.js';
 import { EnvZone, procEnv } from './env.js';
+import { deskSet, floorLamp, officeChair, sofaCushions } from './furniture.js';
 import { fabric, glossFloor, marble, oak, plaster, rug } from './materials.js';
 import { QUALITY } from './quality.js';
 
@@ -259,19 +260,22 @@ export function buildShowcase(world: World) {
   B(dark, -1.63, 0, 0.95, -1.585, 0.73, 1.7, darkO);
   for (let z = 0.955; z < 1.69; z += 0.05) B(dark, -1.585, 0, z, -1.565, 0.73, z + 0.028, darkO);
   // Monitor, keyboard, papers, books
-  B(dark, -2.78, 0.77, 1.46, -2.44, 0.782, 1.64, darkO);
-  B(dark, -2.63, 0.782, 1.56, -2.59, 1.02, 1.58, darkO);
   B(dark, -3.0, 0.94, 1.52, -2.22, 1.42, 1.545, darkO);
   B(screen, -2.985, 0.955, 1.516, -2.235, 1.405, 1.52, { emissive: [0.9, 1.1, 1.5], albedo: [0, 0, 0] });
   B(slat, -2.84, 0.77, 1.14, -2.4, 0.781, 1.28, { albedo: [0.7, 0.7, 0.7] });
   B(cream, -2.2, 0.77, 1.1, -1.96, 0.7715, 1.42, creamO);
   B(cream, -2.16, 0.7715, 1.08, -1.92, 0.773, 1.4, creamO);
-  // Desk chair
-  B(charcoal, -2.86, 0.44, 0.3, -2.36, 0.53, 0.8, { albedo: [0.07, 0.07, 0.08], uv: [0.5, 0.5] });
-  B(charcoal, -2.84, 0.56, 0.27, -2.38, 1.08, 0.33, { albedo: [0.07, 0.07, 0.08], uv: [0.5, 0.5] });
-  B(dark, -2.63, 0.09, 0.53, -2.59, 0.44, 0.57, darkO);
-  B(dark, -2.88, 0.05, 0.535, -2.34, 0.09, 0.565, darkO);
-  B(dark, -2.625, 0.05, 0.28, -2.595, 0.09, 0.82, darkO);
+  // Desk chair, monitor stand and desk accessories: modelled pieces, baked with the room
+  const props = new Group();
+  const chair = officeChair();
+  chair.position.set(OX - 2.6, 0, OZ + 0.52);
+  chair.rotation.y = 0.35;
+  props.add(chair);
+  bake.addOccluder(P(-2.86, 0.42, 0.28), P(-2.34, 0.55, 0.78), [0.05, 0.05, 0.05], [0, 0, 0]);
+  bake.addOccluder(P(-2.84, 0.58, 0.22), P(-2.36, 1.1, 0.3), [0.05, 0.05, 0.05], [0, 0, 0]);
+  const desk = deskSet();
+  desk.position.set(OX - 2.61, 0.77, OZ + 1.5);
+  props.add(desk);
 
   // ---- Wall shelves on the left wall, with books ------------------------------
   const bookMats = [0xe9e4d8, 0x2b2c30, 0x8a6a4a, 0x6f7f72, 0xb9a48a, 0x1f2a36, 0x7a3b32].map((c) => flat(c, 0.75));
@@ -330,14 +334,11 @@ export function buildShowcase(world: World) {
   const sofaX1 = 3.7;
   B(dark, sofaX0 + 0.05, 0.012, -3.25, sofaX1 - 0.05, 0.1, -2.2, darkO);
   B(linen, sofaX0, 0.1, -3.3, sofaX1, 0.4, -2.15, linenO);
-  B(linen, sofaX0, 0.4, -3.3, sofaX0 + 0.22, 0.64, -2.15, linenO);
-  B(linen, sofaX1 - 0.22, 0.4, -3.3, sofaX1, 0.64, -2.15, linenO);
-  const mid = (sofaX0 + sofaX1) / 2;
-  B(linen, sofaX0 + 0.24, 0.4, -3.02, mid - 0.006, 0.53, -2.13, linenO);
-  B(linen, mid + 0.006, 0.4, -3.02, sofaX1 - 0.24, 0.53, -2.13, linenO);
-  B(linen, sofaX0 + 0.24, 0.53, -3.3, mid - 0.006, 0.95, -3.04, linenO);
-  B(linen, mid + 0.006, 0.53, -3.3, sofaX1 - 0.24, 0.95, -3.04, linenO);
-  B(charcoal, sofaX0 + 0.3, 0.53, -3.02, sofaX0 + 0.75, 0.9, -2.9, { albedo: [0.07, 0.07, 0.08], uv: [0.5, 0.5] });
+  const cushions = sofaCushions(sofaX0, sofaX1, -3.3, -2.15, 0xcfc9be);
+  cushions.position.set(OX, 0, OZ);
+  props.add(cushions);
+  bake.addOccluder(P(sofaX0, 0.4, -3.3), P(sofaX1, 0.56, -2.2), [0.6, 0.58, 0.54], [0, 0, 0]);
+  bake.addOccluder(P(sofaX0, 0.56, -3.3), P(sofaX1, 0.95, -3.05), [0.6, 0.58, 0.54], [0, 0, 0]);
   // Coffee table: honed marble on two blades
   B(stone, 1.55, 0.36, -1.6, 3.15, 0.4, -0.85, stoneO);
   B(dark, 1.75, 0.012, -1.55, 1.79, 0.36, -0.9, darkO);
@@ -348,10 +349,12 @@ export function buildShowcase(world: World) {
   bowl.position.set(OX + 2.65, 0.4, OZ - 1.2);
   bowl.scale.setScalar(1.5);
   root.add(bowl);
-  // Floor lamp with a lit drum shade
-  B(dark, 0.52, 0, -3.0, 0.82, 0.02, -2.7, darkO);
-  B(dark, 0.66, 0.02, -2.86, 0.68, 1.4, -2.84, darkO);
-  B(shade, 0.5, 1.4, -3.02, 0.84, 1.72, -2.68, { emissive: [4.2, 3.3, 2.2], albedo: [0, 0, 0] });
+  // Floor lamp: modelled, with its shade registered as an area light for the bake
+  const lamp = floorLamp();
+  lamp.position.set(OX + 0.67, 0, OZ - 2.85);
+  props.add(lamp);
+  bake.addOccluder(P(0.5, 1.41, -3.02), P(0.84, 1.71, -2.68), [0, 0, 0], [4.2, 3.3, 2.2]);
+  bake.addOccluder(P(0.53, 0, -2.99), P(0.81, 0.03, -2.71), [0.05, 0.04, 0.03], [0, 0, 0]);
 
   // ---- Material bench: a plinth of spheres under a picture light ----------------
   B(wall, 3.85, 0, 0.75, 4.4, 0.86, 3.1, wallO);
@@ -426,6 +429,8 @@ export function buildShowcase(world: World) {
   entry.rotation.y = Math.PI;
   procEnv.roomGroup.add(entry);
 
+  root.add(props);
+  bake.bakeObject(props);
   root.add(...b.meshes());
   world.createTransformEntity(root);
 

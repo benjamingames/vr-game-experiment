@@ -15,6 +15,8 @@ shot gallery-lounge  "quality=high&dbg=gallery,bakefast&look=-0.1,-0.9&pos=-301.
 shot gallery-desk    "quality=high&dbg=gallery,bakefast&look=-0.15,2.3&pos=-298.5,0,-1.2"
 shot gallery-window  "quality=high&dbg=gallery,bakefast&look=-0.12,3.4&pos=-299.5,0,-1.6"
 shot gallery-floor   "quality=high&dbg=gallery,bakefast&look=-0.32,2.9&pos=-299.2,0,-2.2"
+shot gallery-chair   "quality=high&dbg=gallery,bakefast&look=-0.3,2.5&pos=-301.5,0,-0.6"
+shot gallery-sofa    "quality=high&dbg=gallery,bakefast&look=-0.22,-0.35&pos=-298.6,0,-0.4"
 shot gallery-night   "quality=high&dbg=gallery,bakefast,night&look=-0.1,-0.9&pos=-301.5,0,1.2"
 shot arena-stump     "quality=high&dbg=monke&look=0.1,0"
 shot arena-outside   "quality=high&dbg=monke&look=0.05,-0.9&pos=13,2,-13"

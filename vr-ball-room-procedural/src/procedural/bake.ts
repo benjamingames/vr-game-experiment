@@ -27,6 +27,7 @@ import {
   Mesh,
   MeshStandardMaterial,
   NearestFilter,
+  Object3D,
   OrthographicCamera,
   PlaneGeometry,
   RGBAFormat,
@@ -339,6 +340,37 @@ export class LightBake {
   }
   get boxCount() {
     return this.occ.length / 16;
+  }
+
+  /**
+   * Bakes an arbitrary object (any meshes, curved or not): every vertex becomes a sample, so the
+   * piece gets the room's soft light and ambient occlusion. Call after the object is positioned
+   * and before the first update(). Materials used here must not be shared with unbaked meshes.
+   * Instanced meshes and anything with `userData.noBake` (on the mesh or its material) are skipped.
+   */
+  bakeObject(root: Object3D) {
+    root.updateMatrixWorld(true);
+    const p = new Vector3();
+    const n = new Vector3();
+    root.traverse((o) => {
+      const mesh = o as Mesh;
+      if (!mesh.isMesh || (mesh as unknown as { isInstancedMesh?: boolean }).isInstancedMesh) return;
+      const mat = mesh.material as Material;
+      if (mesh.userData.noBake || Array.isArray(mat) || mat.userData.noBake) return;
+      if (!(mat as unknown as MeshStandardMaterial).isMeshStandardMaterial) return;
+      const geo = mesh.geometry;
+      if (geo.attributes.bakeId || !geo.attributes.normal) return;
+      const pos = geo.attributes.position;
+      const nrm = geo.attributes.normal;
+      const ids = new Float32Array(pos.count);
+      for (let i = 0; i < pos.count; i++) {
+        p.fromBufferAttribute(pos, i).applyMatrix4(mesh.matrixWorld);
+        n.fromBufferAttribute(nrm, i).transformDirection(mesh.matrixWorld);
+        ids[i] = this.addSample([p.x + n.x * 0.006, p.y + n.y * 0.006, p.z + n.z * 0.006], [n.x, n.y, n.z]);
+      }
+      geo.setAttribute('bakeId', new Float32BufferAttribute(ids, 1));
+      this.patch(mat);
+    });
   }
 
   /** Makes a standard/physical material read its ambient light from the bake. */
