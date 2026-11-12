@@ -35,7 +35,6 @@ import {
   barkSet,
   endGrainSet,
   fbm3,
-  foliageSet,
   groundSet,
   retile,
   rockSet,
@@ -45,6 +44,7 @@ const STUMP = { rin: 3.45, rout: 4.25, segs: 48, doorHalf: 0.21, doorTop: 2.7 };
 const DOORS = [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2];
 const BOWL = 42;
 
+const ss2 = (a: number, b: number, x: number) => Math.min(1, Math.max(0, (x - a) / (b - a)));
 const sstep = (a: number, b: number, x: number) => {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
   return t * t * (3 - 2 * t);
@@ -219,22 +219,47 @@ export function buildProceduralArena(): Group {
   innerWood.name = 'stumpwood';
   innerWood.side = DoubleSide;
   const rock = pbrMat('rock', retile(rockSet(), 2, 2));
-  const leaves = pbrMat('leaves-canopy', retile(foliageSet(), 4, 3));
-  leaves.normalScale.set(0.6, 0.6);
-  // The blobs are now only the shaded interior of each crown; the leaves themselves are instanced sprays
-  leaves.color = new Color(0x9ab86a);
-  const core = QUALITY.high ? 0.66 : 0.95;
-  leaves.emissive = new Color(0x18260c);
+  // Thin limbs inside each crown: same bark, but decorative (the "leaves" name skips collision)
+  const leaves = pbrMat('leaves-twigs', retile(barkTex, 2, 3));
   const crowns: Array<{ c: Vector3; r: number }> = [];
-  windy(
-    leaves,
-    'transformed += normal * ( sin( uTime * 1.3 + position.x * 0.8 + position.z * 0.6 ) * 0.035 + sin( uTime * 2.9 + position.y * 2.0 ) * 0.015 );',
-  );
+  const UPV = new Vector3(0, 1, 0);
+  /** Forking limbs from the heart of a crown out to where the leaves are, so the inside is wood, not a ball. */
+  const crownLimbs = (c: Vector3, r: number) => {
+    const n = QUALITY.high ? 7 : 4;
+    const a0 = new Vector3(c.x, c.y - r * 0.38, c.z);
+    for (let i = 0; i < n; i++) {
+      const az = (i / n) * Math.PI * 2 + rnd();
+      const el = 0.15 + rnd() * 1.1;
+      const dir = new Vector3(Math.cos(az) * Math.cos(el), Math.sin(el) * 0.75, Math.sin(az) * Math.cos(el));
+      const len = r * (0.7 + rnd() * 0.25);
+      const g = new CylinderGeometry(0.035, 0.1, len, 6, 1);
+      P.copy(a0).addScaledVector(dir, len / 2);
+      Q.setFromUnitVectors(UPV, dir);
+      M.compose(P, Q, S.set(1, 1, 1));
+      bLeaves.add(g, M);
+      if (!QUALITY.high) continue;
+      // Each limb forks once near its end
+      const tip = a0.clone().addScaledVector(dir, len * 0.6);
+      for (const s of [-1, 1]) {
+        const d2 = dir.clone();
+        d2.x += s * (0.4 + rnd() * 0.4) * Math.sin(az);
+        d2.z -= s * (0.4 + rnd() * 0.4) * Math.cos(az);
+        d2.y += 0.2 - rnd() * 0.5;
+        d2.normalize();
+        const l2 = r * (0.35 + rnd() * 0.2);
+        const g2 = new CylinderGeometry(0.014, 0.04, l2, 5, 1);
+        P.copy(tip).addScaledVector(d2, l2 / 2);
+        Q.setFromUnitVectors(UPV, d2);
+        M.compose(P, Q, S.set(1, 1, 1));
+        bLeaves.add(g2, M);
+      }
+    }
+  };
 
+  const bLeaves = new Bucket();
   const bBark = new Bucket();
   const bInner = new Bucket();
   const bRock = new Bucket();
-  const bLeaves = new Bucket();
 
   // ---- Terrain ----------------------------------------------------------------
   {
@@ -430,16 +455,14 @@ export function buildProceduralArena(): Group {
       const lr = 1.5 + rnd() * 0.9;
       P.set(x, base + by, z).addScaledVector(dir, len + rb * 0.3);
       P.y += lr * 0.35;
-      M.compose(P, Q.setFromEuler(E.set(0, rnd() * 6, 0)), S.set(lr * core, lr * core * 0.68, lr * core));
-      bLeaves.add(displacedBlob(16, 11, 0.7, 1.6, rnd() * 50), M);
       crowns.push({ c: P.clone(), r: lr });
+      crownLimbs(P.clone(), lr);
     }
     for (let c = 0; c < 3; c++) {
       const lr = 2.4 + rnd() * 1.3;
       P.set(x + (rnd() - 0.5) * 2.4, base + H - 0.6 + c * 0.9 + rnd(), z + (rnd() - 0.5) * 2.4);
-      M.compose(P, Q.setFromEuler(E.set(0, rnd() * 6, 0)), S.set(lr * core, lr * core * 0.7, lr * core));
-      bLeaves.add(displacedBlob(18, 12, 0.75, 1.5, rnd() * 50), M);
       crowns.push({ c: P.clone(), r: lr });
+      crownLimbs(P.clone(), lr);
     }
   }
 
@@ -470,7 +493,7 @@ export function buildProceduralArena(): Group {
         'transformed.z += sw * 0.09 * position.y;\n' +
         'transformed.x += sw * 0.04 * position.y;',
     );
-    const per = QUALITY.high ? 58 : 12;
+    const per = QUALITY.high ? 74 : 18;
     let total = 0;
     for (const cr of crowns) total += Math.round(per * cr.r * cr.r);
     const sprays = new InstancedMesh(sprayGeometry(), lm, total);
@@ -489,7 +512,8 @@ export function buildProceduralArena(): Group {
         const sr = Math.sqrt(Math.max(0, 1 - u * u));
         N3.set(Math.cos(ph) * sr, u, Math.sin(ph) * sr);
         if (N3.y < -0.45 && rnd() < 0.8) N3.y = -N3.y * rnd();
-        const shell = rnd() < 0.35 ? 0.7 + rnd() * 0.15 : 0.92 + rnd() * 0.16;
+        // Leaves fill the whole crown, thinning toward its heart, so there is depth instead of a shell
+        const shell = 0.28 + 0.8 * Math.pow(rnd(), 0.55);
         const bump = 1 + (fbm3(N3.x * 1.6 + cr.c.x, N3.y * 1.6, N3.z * 1.6 + cr.c.z, 2, 5) - 0.5) * 0.7;
         P.set(cr.c.x + N3.x * cr.r * shell * bump, cr.c.y + N3.y * cr.r * 0.7 * shell * bump, cr.c.z + N3.z * cr.r * shell * bump);
         Z3.copy(N3).multiplyScalar(0.7);
@@ -505,7 +529,7 @@ export function buildProceduralArena(): Group {
         M.setPosition(P);
         sprays.setMatrixAt(n, M);
         // Lit, yellower leaves on top and outside; deeper green underneath and inside
-        const lit = (0.5 + 0.5 * N3.y) * (shell < 0.8 ? 0.55 : 1);
+        const lit = (0.5 + 0.5 * N3.y) * (0.25 + 0.75 * ss2(0.35, 0.95, shell));
         const v = 0.7 + lit * 0.75 + rnd() * 0.3;
         c.setRGB(v * (0.85 + lit * 0.35 + rnd() * 0.15), v * (1.0 + lit * 0.1), v * (0.7 + rnd() * 0.2));
         sprays.setColorAt(n++, c);

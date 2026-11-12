@@ -36,9 +36,9 @@ WebGL". The owner has repeatedly rejected results that were merely nice. Specifi
   the monitor shows a desktop image, the lamp shade glows with a falloff.
 - Untested: walking through the doors between rooms, anything in a headset.
 
-- Monke Map (`arena.ts`): crowns are instanced leaf sprays over a small shaded core, grass is
+- Monke Map (`arena.ts`): crowns are instanced leaf sprays filling the whole crown around forking inner limbs (no core ball: the owner rejected it), grass is
   dense arching tufts, ground has straw/litter and a colour drift. High tier draws roughly 2-3
-  million triangles there; frame rate was NOT measured. Low tier keeps big cores, few sprays.
+  million triangles there; frame rate was NOT measured. Low tier uses fewer, larger sprays.
 - RC car has a moulded one-piece shell (`carShell`); the rug has a bound edge.
 - Lario, the stretchy head (`face.ts`): an original character (teal beanie, auburn hair, hazel
   eyes, roll collar). The face is one sculpted skin mesh; `LarioSkin` drags the skin around seven
