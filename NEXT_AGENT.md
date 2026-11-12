@@ -36,11 +36,17 @@ WebGL". The owner has repeatedly rejected results that were merely nice. Specifi
   the monitor shows a desktop image, the lamp shade glows with a falloff.
 - Untested: walking through the doors between rooms, anything in a headset.
 
+- Monke Map (`arena.ts`): crowns are instanced leaf sprays over a small shaded core, grass is
+  dense arching tufts, ground has straw/litter and a colour drift. High tier draws roughly 2-3
+  million triangles there; frame rate was NOT measured. Low tier keeps big cores, few sprays.
+- RC car has a moulded one-piece shell (`carShell`); the rug has a bound edge.
+- Owner's note: the stretchy head ("Lario") was left untouched on purpose; see the chat history.
+
 ## Best next steps (objects still below the bar)
 
-- RC car and remote: still boxy bodywork; needs a moulded shell, wheel arches, tyre tread.
-- Stretchy head on the Gallery door, moles, dartboard stand, the rug (flat stripes, no pile/edge).
+- Remote control, moles, dartboard stand, rug pile, boulders (no moss/lichen), tree trunks/roots.
 - Sofa: no piping, seams or creases. Books: no spine titles. Chandelier in the main room.
 - Give the main room the Gallery treatment: baked lighting, wall relief.
+- Measure Monke Map frame rate on High and on a headset; trim `per` (sprays) in `arena.ts` if slow.
 - Sharper floor reflections; softer sun shadow edges; test the door triggers in a real browser.
 - Reference photos: Wikimedia Commons rate-limits hard; fetch one search every ~15 s.

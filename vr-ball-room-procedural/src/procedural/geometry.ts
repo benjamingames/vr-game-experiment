@@ -392,6 +392,50 @@ export function detailDartboard(board: Mesh, radius: number, thickness: number, 
 }
 
 /** Dresses the block-built RC car: tyres with tread, spoked rims, lights, glass, mirrors, aerial. */
+/**
+ * Moulded car body in one piece: low bonnet, raised cabin with inward-leaning glass, short rear
+ * deck, rounded corners and a tucked sill. Spans the chassis box and the cabin above it; the
+ * window band is painted dark through vertex colours. Front of the car is -Z.
+ */
+export function carShell(w: number, h: number, d: number): BufferGeometry {
+  const hi = QUALITY.high;
+  const geo = new PlainBox(1, 1, 1, hi ? 18 : 8, hi ? 18 : 8, hi ? 44 : 16);
+  const pos = geo.attributes.position;
+  const col = new Float32Array(pos.count * 3);
+  const sm = (a: number, b: number, x: number) => {
+    const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
+    return t * t * (3 - 2 * t);
+  };
+  const y0 = -0.24 * h;
+  const tall = 0.83 * h;
+  for (let i = 0; i < pos.count; i++) {
+    let x = pos.getX(i) * 2;
+    let y = pos.getY(i) * 2;
+    let z = pos.getZ(i) * 2;
+    // Cube to superellipsoid: soft corners everywhere
+    const s = Math.max(Math.abs(x), Math.abs(y), Math.abs(z)) / Math.pow(Math.abs(x) ** 6 + Math.abs(y) ** 6 + Math.abs(z) ** 6, 1 / 6);
+    x *= s;
+    y *= s;
+    z *= s;
+    // Roof line: bonnet, windscreen rake, roof, rear screen, boot deck
+    const roof = 0.16 + 0.84 * sm(-0.62, -0.3, z) * (1 - 0.68 * sm(0.3, 0.66, z));
+    if (y > 0) y *= roof;
+    const f = (y + 1) / 2;
+    x *= 1 - 0.3 * sm(0.6, 1, f);
+    x *= 1 - 0.1 * sm(0.55, 1, Math.abs(z));
+    if (y < 0) x *= 1 + 0.06 * y;
+    pos.setXYZ(i, (x * w * 0.9) / 2, y0 + f * tall, (z * d * 0.96) / 2);
+    const glass = f > 0.615 && f < 0.93 && z > -0.5 && z < 0.56;
+    const v = glass ? 0.035 : 1;
+    col[i * 3] = v;
+    col[i * 3 + 1] = glass ? 0.045 : 1;
+    col[i * 3 + 2] = glass ? 0.06 : 1;
+  }
+  geo.setAttribute('color', new Float32BufferAttribute(col, 3));
+  geo.computeVertexNormals();
+  return geo;
+}
+
 export function detailCar(chassis: Mesh, w: number, h: number, d: number) {
   const rubber = new MeshStandardMaterial({ color: new Color(0x121314), roughness: 0.92 });
   const chrome = metalMat(0xe2e7ee, 0.14);
@@ -446,22 +490,14 @@ export function detailCar(chassis: Mesh, w: number, h: number, d: number) {
   }
   // Grille slats
   for (let i = 0; i < 4; i++) add(new PlainBox(w * 0.34, 0.0018, 0.003), chrome, 0, -h * 0.18 + i * 0.005, -d * 0.492);
-  // Windscreen and rear window
-  const glass = new MeshPhysicalMaterial({
-    color: new Color(0x9fd0ff),
-    roughness: 0.04,
-    metalness: 0.2,
-    transparent: true,
-    opacity: 0.55,
-    envMapIntensity: 1.6,
-  });
-  const ws = add(new BoxGeometry(w * 0.64, h * 0.34, 0.003), glass, 0, h * 0.38, -d * 0.255);
-  ws.rotation.x = 0.32;
-  const rw = add(new BoxGeometry(w * 0.6, h * 0.3, 0.003), glass, 0, h * 0.38, d * 0.195);
-  rw.rotation.x = -0.32;
+  // Wheel-arch flares
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    const arch = add(new TorusGeometry(0.0345, 0.005, 8, 28, Math.PI), dark, sx * w * 0.455, -h * 0.18, sz * d * 0.31);
+    arch.rotation.y = Math.PI / 2;
+  }
   // Racing stripes and aerial
   const white = new MeshStandardMaterial({ color: new Color(0xf5f5f0), roughness: 0.35 });
-  for (const s of [-1, 1]) add(new PlainBox(w * 0.07, 0.001, d * 0.24), white, s * w * 0.07, h * 0.241, -d * 0.36);
+  for (const s of [-1, 1]) add(new PlainBox(w * 0.07, 0.001, d * 0.2), white, s * w * 0.07, h * 0.243, -d * 0.36);
   add(new PlainCylinder(0.0009, 0.0012, 0.09, 6), dark, w * 0.3, h * 0.6 + 0.02, d * 0.2);
   add(new PlainSphere(0.003, 10, 8), new MeshStandardMaterial({ color: new Color(0xff3b30), roughness: 0.3 }), w * 0.3, h * 0.6 + 0.066, d * 0.2);
 }

@@ -360,6 +360,17 @@ export function buildDecor() {
   rugMesh.receiveShadow = true;
   rugMesh.raycast = () => {};
   root.add(rugMesh);
+  // Bound edge: a rolled, stitched border standing just proud of the weave
+  const binding = new MeshStandardMaterial({ color: new Color(0x2c2d30), roughness: 0.95 });
+  for (const [len, x, z, turn] of [[2.7, 0, -0.95, true], [2.7, 0, 0.95, true], [1.9, -1.35, 0, false], [1.9, 1.35, 0, false]] as Array<[number, number, number, boolean]>) {
+    const edge = new Mesh(new PlainCylinder(0.009, 0.009, len + 0.012, 10), binding);
+    edge.rotation.x = Math.PI / 2;
+    if (turn) edge.rotation.z = Math.PI / 2;
+    edge.position.set(x, 0.008, -0.55 + z);
+    edge.receiveShadow = true;
+    edge.raycast = () => {};
+    root.add(edge);
+  }
 
   const plants: Array<[number, number, number, boolean]> = [
     [-2.58, -2.5, 1.35, true],

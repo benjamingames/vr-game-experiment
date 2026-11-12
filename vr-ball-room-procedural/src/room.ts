@@ -73,6 +73,7 @@ import {
   hoopDetail,
   moleFace,
   pinGeometry,
+  carShell,
   detailCar,
   detailDartboard,
   detailedDart,
@@ -402,6 +403,11 @@ function buildRCCarAndRemote(world: World, tableTop: number) {
     carChassis.add(wheel);
   });
 
+  // One moulded shell replaces the block body and the box cabin
+  carChassis.geometry.dispose();
+  (carChassis as Mesh).geometry = carShell(carW, carH, carD);
+  (carChassis.material as MeshStandardMaterial).vertexColors = true;
+  cabin.visible = false;
   detailCar(carChassis, carW, carH, carD);
   const carEntity = world.createTransformEntity(carChassis);
   carEntity.addComponent(PhysicsShape, {
