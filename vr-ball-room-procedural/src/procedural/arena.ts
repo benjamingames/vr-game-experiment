@@ -130,6 +130,73 @@ function pbrMat(name: string, set: PBRSet, extra: Partial<MeshStandardMaterial> 
   return m;
 }
 
+/**
+ * A tube along a curved path with a radius that varies along it and around it, so trunks and
+ * limbs can flare, flute and bulge. Frames are carried along the path, so the lobes do not twist.
+ */
+function tube(path: Vector3[], radius: (i: number, ang: number) => number, sides: number, cap = false): BufferGeometry {
+  const n = path.length;
+  const pos: number[] = [];
+  const uv: number[] = [];
+  const idx: number[] = [];
+  const T = new Vector3();
+  const N = new Vector3();
+  const B = new Vector3();
+  let along = 0;
+  for (let i = 0; i < n; i++) {
+    T.copy(path[Math.min(i + 1, n - 1)]).sub(path[Math.max(i - 1, 0)]).normalize();
+    if (i === 0) N.crossVectors(T, Math.abs(T.y) < 0.9 ? new Vector3(0, 1, 0) : new Vector3(1, 0, 0)).normalize();
+    else N.addScaledVector(T, -N.dot(T)).normalize();
+    B.crossVectors(T, N);
+    if (i > 0) along += path[i].distanceTo(path[i - 1]);
+    for (let j = 0; j <= sides; j++) {
+      const ang = ((j % sides) / sides) * Math.PI * 2;
+      const r = radius(i, ang);
+      const cx = Math.cos(ang) * r;
+      const sx = Math.sin(ang) * r;
+      pos.push(path[i].x + N.x * cx + B.x * sx, path[i].y + N.y * cx + B.y * sx, path[i].z + N.z * cx + B.z * sx);
+      uv.push((j / sides) * 2, along / 3);
+    }
+  }
+  const ring = sides + 1;
+  for (let i = 0; i < n - 1; i++) {
+    for (let j = 0; j < sides; j++) {
+      const a = i * ring + j;
+      idx.push(a, a + 1, a + ring, a + 1, a + ring + 1, a + ring);
+    }
+  }
+  if (cap) {
+    for (const end of [0, n - 1]) {
+      const c = pos.length / 3;
+      pos.push(path[end].x, path[end].y, path[end].z);
+      uv.push(0.5, 0.5);
+      for (let j = 0; j < sides; j++) {
+        const a = end * ring + j;
+        if (end === 0) idx.push(c, a + 1, a);
+        else idx.push(c, a, a + 1);
+      }
+    }
+  }
+  const g = new BufferGeometry();
+  g.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3));
+  g.setAttribute('uv', new BufferAttribute(new Float32Array(uv), 2));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  // The first and last vertex of each ring are the same point: share their normal so no seam shows
+  const nr = g.attributes.normal;
+  for (let i = 0; i < n; i++) {
+    const a = i * ring;
+    const b = a + sides;
+    const x = nr.getX(a) + nr.getX(b);
+    const y = nr.getY(a) + nr.getY(b);
+    const z = nr.getZ(a) + nr.getZ(b);
+    const l = Math.hypot(x, y, z) || 1;
+    nr.setXYZ(a, x / l, y / l, z / l);
+    nr.setXYZ(b, x / l, y / l, z / l);
+  }
+  return g;
+}
+
 /** Wind sway injected into a standard material's vertex stage. */
 function windy(m: MeshStandardMaterial, body: string) {
   m.userData.noBoxProject = true;
@@ -398,18 +465,37 @@ export function buildProceduralArena(): Group {
   }
 
   // ---- Leaning logs up to the stump rim -----------------------------------------
+  const sides = QUALITY.high ? 22 : 10;
   const logAngles = [Math.PI / 4, (5 * Math.PI) / 4];
   for (const a of logAngles) {
-    const top = new Vector3(Math.cos(a) * 4.0, stumpTop(a) + 0.15, Math.sin(a) * 4.0);
-    const gx = Math.cos(a) * 11.5;
-    const gz = Math.sin(a) * 11.5;
+    const top = new Vector3(Math.cos(a) * 3.8, stumpTop(a) + 0.15, Math.sin(a) * 3.8);
+    const gx = Math.cos(a) * 11.8;
+    const gz = Math.sin(a) * 11.8;
     const bot = new Vector3(gx, arenaHeightAt(gx, gz) - 0.35, gz);
-    const len = top.distanceTo(bot) + 0.6;
-    const g = new CylinderGeometry(0.5, 0.62, len, 12, 8);
-    P.copy(top).add(bot).multiplyScalar(0.5);
-    Q.setFromUnitVectors(new Vector3(0, 1, 0), top.clone().sub(bot).normalize());
-    M.compose(P, Q, S.set(1, 1, 1));
-    bBark.add(g, M);
+    // A fallen trunk: nearly straight (it is a ramp), but fluted, knotted and thicker at the butt
+    const n = QUALITY.high ? 18 : 8;
+    const path: Vector3[] = [];
+    const sd = rnd() * 50;
+    for (let i = 0; i <= n; i++) {
+      const t = i / n;
+      const p = bot.clone().lerp(top, t);
+      p.y += Math.sin(t * Math.PI) * 0.12 + (fbm3(t * 3, sd, 1, 2, 3) - 0.5) * 0.12;
+      path.push(p);
+    }
+    const lobes = 5;
+    bBark.add(
+      tube(
+        path,
+        (i, ang) => {
+          const t = i / n;
+          const knot = 0.14 * Math.exp(-(((t - 0.45) / 0.05) ** 2) - ((ang - 1.4) / 0.5) ** 2);
+          return (0.64 - 0.14 * t) * (1 + 0.25 * Math.exp(-t * 9)) * (1 + 0.06 * Math.sin(ang * lobes + t * 3) + 0.12 * (fbm3(Math.cos(ang) * 1.6 + sd, t * 6, Math.sin(ang) * 1.6, 3, 7) - 0.5)) + knot;
+        },
+        sides,
+        true,
+      ),
+      M.identity(),
+    );
   }
 
   // ---- Trees ----------------------------------------------------------------------
@@ -424,21 +510,83 @@ export function buildProceduralArena(): Group {
     if (logAngles.some((la) => Math.hypot(Math.cos(la) * 9 - x, Math.sin(la) * 9 - z) < 4.5)) continue;
     trees.push([x, z]);
   }
+  /** A limb that leaves `from` along `dir`, bows, and ends at `to`; thick collar at the base, knuckles along it. */
+  const limb = (from: Vector3, dir: Vector3, to: Vector3, r0: number, r1: number, seed: number) => {
+    const n = QUALITY.high ? 12 : 6;
+    const len = from.distanceTo(to);
+    const c1 = from.clone().addScaledVector(dir, len * 0.45);
+    const c2 = to.clone().lerp(from, 0.3);
+    c1.y -= len * 0.06;
+    c2.y -= len * 0.16;
+    const path: Vector3[] = [];
+    for (let i = 0; i <= n; i++) {
+      const t = i / n;
+      const u = 1 - t;
+      const p = from.clone().multiplyScalar(u * u * u).addScaledVector(c1, 3 * u * u * t).addScaledVector(c2, 3 * u * t * t).addScaledVector(to, t * t * t);
+      p.x += (fbm3(t * 4 + seed, 2, 0, 2, 5) - 0.5) * len * 0.15 * Math.sin(t * Math.PI);
+      p.z += (fbm3(0, t * 4 + seed, 6, 2, 9) - 0.5) * len * 0.15 * Math.sin(t * Math.PI);
+      path.push(p);
+    }
+    bBark.add(
+      tube(
+        path,
+        (i, ang) => {
+          const t = i / n;
+          const body = r0 + (r1 - r0) * Math.pow(t, 0.8);
+          const collar = 1 + 0.6 * Math.exp(-t * 5);
+          const knuckle = 1 + 0.12 * Math.exp(-(((t - 0.5) / 0.06) ** 2));
+          return body * collar * knuckle * (1 + 0.16 * (fbm3(Math.cos(ang) * 1.5 + seed, t * 5, Math.sin(ang) * 1.5, 2, 3) - 0.5));
+        },
+        Math.max(8, Math.round(sides * 0.6)),
+        true,
+      ),
+      M.identity(),
+    );
+  };
   for (const [x, z] of trees) {
     const H = 9 + rnd() * 6;
     const rb = 0.55 + rnd() * 0.35;
     const base = arenaHeightAt(x, z) - 0.4;
-    const trunk = new CylinderGeometry(rb * 0.55, rb, H, 12, 8, true);
-    const tp = trunk.attributes.position;
-    for (let i = 0; i < tp.count; i++) {
-      const y = tp.getY(i) + H / 2;
-      const flare = 1 + 0.9 * Math.exp(-y * 1.3);
-      tp.setX(i, tp.getX(i) * flare + Math.sin(y * 0.35 + x) * 0.18);
-      tp.setZ(i, tp.getZ(i) * flare + Math.cos(y * 0.3 + z) * 0.18);
-    }
-    trunk.computeVertexNormals();
-    M.makeTranslation(x, base + H / 2, z);
-    bBark.add(trunk, M);
+    // Trunk: leans and wanders, flares into buttress roots, fluted all the way up, with a burl or two
+    const nT = QUALITY.high ? 30 : 12;
+    const sd = rnd() * 80;
+    const leanA = rnd() * Math.PI * 2;
+    const lean = (0.02 + rnd() * 0.07) * H;
+    const ph1 = rnd() * 6.28;
+    const ph2 = rnd() * 6.28;
+    const roots = 4 + Math.floor(rnd() * 3);
+    const rootPh = rnd() * 6.28;
+    const burlY = 0.18 + rnd() * 0.3;
+    const burlA = rnd() * 6.28;
+    const centre = (t: number) =>
+      new Vector3(
+        x + Math.cos(leanA) * lean * t * t + Math.sin(t * 2.6 + ph1) * 0.42 * t,
+        base + H * t,
+        z + Math.sin(leanA) * lean * t * t + Math.cos(t * 2.1 + ph2) * 0.42 * t,
+      );
+    const path: Vector3[] = [];
+    // More rings near the ground, where the roots change shape quickly
+    for (let i = 0; i <= nT; i++) path.push(centre(Math.pow(i / nT, 1.6)));
+    bBark.add(
+      tube(
+        path,
+        (i, ang) => {
+          const t = Math.pow(i / nT, 1.6);
+          const y = t * H;
+          const buttress = Math.pow(0.5 + 0.5 * Math.sin(ang * roots + rootPh + y * 0.25), 2);
+          const flare = 1 + 1.25 * Math.exp(-y * 1.0) * (0.35 + 0.65 * buttress);
+          const flute = 1 + 0.07 * Math.sin(ang * roots + rootPh + y * 0.25) * Math.exp(-y * 0.12);
+          const lumps = 1 + 0.2 * (fbm3(Math.cos(ang) * 1.8 + sd, y * 0.45, Math.sin(ang) * 1.8, 3, 11) - 0.5);
+          let da = Math.abs(ang - burlA);
+          if (da > Math.PI) da = Math.PI * 2 - da;
+          const burl = 0.22 * rb * Math.exp(-(((t - burlY) / 0.035) ** 2) - (da / 0.45) ** 2);
+          return rb * (1 - 0.6 * Math.pow(t, 0.85)) * flare * flute * lumps + burl;
+        },
+        sides,
+        true,
+      ),
+      M.identity(),
+    );
 
     const branches = 3 + Math.floor(rnd() * 3);
     for (let b = 0; b < branches; b++) {
@@ -447,22 +595,31 @@ export function buildProceduralArena(): Group {
       const len = 3 + rnd() * 2.2;
       const tilt = 0.12 + rnd() * 0.22;
       const dir = new Vector3(Math.cos(ba) * Math.cos(tilt), Math.sin(tilt), Math.sin(ba) * Math.cos(tilt));
-      const g = new CylinderGeometry(0.13, 0.27, len, 8, 2);
-      P.set(x, base + by, z).addScaledVector(dir, len / 2 + rb * 0.3);
-      Q.setFromUnitVectors(new Vector3(0, 1, 0), dir);
-      M.compose(P, Q, S.set(1, 1, 1));
-      bBark.add(g, M);
+      const from = centre(by / H);
       const lr = 1.5 + rnd() * 0.9;
-      P.set(x, base + by, z).addScaledVector(dir, len + rb * 0.3);
-      P.y += lr * 0.35;
+      // The limb sweeps out, sags a little, then turns up into its crown
+      const to = from.clone().addScaledVector(dir, len + rb * 0.3);
+      to.y += 0.9 + rnd() * 0.9;
+      limb(from, dir, to, 0.24 + rnd() * 0.06, 0.1, rnd() * 40);
+      P.copy(to);
+      P.y += lr * 0.3;
       crowns.push({ c: P.clone(), r: lr });
       crownLimbs(P.clone(), lr);
     }
+    // The trunk divides into leaders, each carrying one of the top crowns
+    const topP = centre(0.97);
     for (let c = 0; c < 3; c++) {
       const lr = 2.4 + rnd() * 1.3;
       P.set(x + (rnd() - 0.5) * 2.4, base + H - 0.6 + c * 0.9 + rnd(), z + (rnd() - 0.5) * 2.4);
+      P.x += topP.x - x;
+      P.z += topP.z - z;
       crowns.push({ c: P.clone(), r: lr });
       crownLimbs(P.clone(), lr);
+      const to = P.clone();
+      to.y -= lr * 0.25;
+      const up = to.clone().sub(topP);
+      up.y = Math.abs(up.y) + 1.5;
+      limb(centre(0.9 - c * 0.05), up.normalize(), to, rb * 0.3, 0.09, rnd() * 40);
     }
   }
 

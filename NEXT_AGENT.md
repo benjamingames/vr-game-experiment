@@ -39,6 +39,9 @@ WebGL". The owner has repeatedly rejected results that were merely nice. Specifi
 - Monke Map (`arena.ts`): crowns are instanced leaf sprays filling the whole crown around forking inner limbs (no core ball: the owner rejected it), grass is
   dense arching tufts, ground has straw/litter and a colour drift. High tier draws roughly 2-3
   million triangles there; frame rate was NOT measured. Low tier uses fewer, larger sprays.
+- Monke Map trunks, limbs and the two ramp logs are `tube()` meshes in `arena.ts`: curved paths,
+  buttress roots, fluting, burls, branch collars. They are collidable; climbing on the new
+  shapes was NOT play-tested.
 - RC car has a moulded one-piece shell (`carShell`); the rug has a bound edge.
 - Lario, the stretchy head (`face.ts`): an original character (teal beanie, auburn hair, hazel
   eyes, roll collar). The face is one sculpted skin mesh; `LarioSkin` drags the skin around seven
