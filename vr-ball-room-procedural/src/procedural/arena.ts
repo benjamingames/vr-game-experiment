@@ -29,6 +29,7 @@ import {
 import { QUALITY } from './quality.js';
 import { timeUniform } from './env.js';
 import { oak } from './materials.js';
+import { leafMaterial } from './plants.js';
 import {
   PBRSet,
   barkSet,
@@ -155,6 +156,53 @@ function displacedBlob(ws: number, hs: number, amp: number, freq: number, seed: 
   return g;
 }
 
+/**
+ * A leafy twig: leaves set alternately along a short stem (stem along +Y, 1 unit long, leaf faces
+ * toward +Z). Instanced thousands of times over each crown, so the canopy is made of leaves.
+ */
+function sprayGeometry(): BufferGeometry {
+  const r = mulberry(77);
+  const pos: number[] = [];
+  const uv: number[] = [];
+  const idx: number[] = [];
+  const nLeaf = QUALITY.high ? 7 : 4;
+  const rows = [0, 0.3, 0.72, 1];
+  const widths = [0.012, 0.21, 0.2, 0];
+  const X = new Vector3();
+  const Y = new Vector3();
+  const Z = new Vector3();
+  for (let l = 0; l < nLeaf; l++) {
+    const last = l === nLeaf - 1;
+    const t = last ? 1 : 0.08 + (0.84 * l) / (nLeaf - 1);
+    const ang = last ? (r() - 0.5) * 0.3 : (l % 2 ? 1 : -1) * (0.85 + r() * 0.45);
+    Y.set(Math.sin(ang), Math.cos(ang), (r() - 0.5) * 0.7).normalize();
+    Z.set((r() - 0.5) * 0.5, 0, 1).addScaledVector(Y, -Y.z).normalize();
+    X.crossVectors(Y, Z);
+    const L = 0.46 * (0.75 + r() * 0.45);
+    const base = pos.length / 3;
+    for (let i = 0; i < rows.length; i++) {
+      for (const c of [-1, 0, 1]) {
+        const x = c * widths[i];
+        const z = 0.4 * Math.abs(c) * widths[i] - 0.14 * rows[i] * rows[i];
+        pos.push(X.x * x * L + Y.x * rows[i] * L + Z.x * z * L, t * 0.72 + X.y * x * L + Y.y * rows[i] * L + Z.y * z * L, X.z * x * L + Y.z * rows[i] * L + Z.z * z * L);
+        uv.push(c * 0.5 + 0.5, rows[i]);
+      }
+    }
+    for (let i = 0; i < rows.length - 1; i++) {
+      for (let j = 0; j < 2; j++) {
+        const q = base + i * 3 + j;
+        idx.push(q, q + 1, q + 3, q + 1, q + 4, q + 3);
+      }
+    }
+  }
+  const g = new BufferGeometry();
+  g.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3));
+  g.setAttribute('uv', new BufferAttribute(new Float32Array(uv), 2));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+
 export function buildProceduralArena(): Group {
   const root = new Group();
   root.name = 'hollow-grove';
@@ -172,7 +220,12 @@ export function buildProceduralArena(): Group {
   innerWood.side = DoubleSide;
   const rock = pbrMat('rock', retile(rockSet(), 2, 2));
   const leaves = pbrMat('leaves-canopy', retile(foliageSet(), 4, 3));
-  leaves.normalScale.set(2, 2);
+  leaves.normalScale.set(0.6, 0.6);
+  // The blobs are now only the shaded interior of each crown; the leaves themselves are instanced sprays
+  leaves.color = new Color(0x9ab86a);
+  const core = QUALITY.high ? 0.66 : 0.95;
+  leaves.emissive = new Color(0x18260c);
+  const crowns: Array<{ c: Vector3; r: number }> = [];
   windy(
     leaves,
     'transformed += normal * ( sin( uTime * 1.3 + position.x * 0.8 + position.z * 0.6 ) * 0.035 + sin( uTime * 2.9 + position.y * 2.0 ) * 0.015 );',
@@ -185,10 +238,11 @@ export function buildProceduralArena(): Group {
 
   // ---- Terrain ----------------------------------------------------------------
   {
-    const N = 84;
+    const N = QUALITY.high ? 168 : 84;
     const size = BOWL * 2 + 4;
     const pos = new Float32Array((N + 1) * (N + 1) * 3);
     const uv = new Float32Array((N + 1) * (N + 1) * 2);
+    const tint = new Float32Array((N + 1) * (N + 1) * 3);
     const idx: number[] = [];
     for (let j = 0; j <= N; j++) {
       for (let i = 0; i <= N; i++) {
@@ -200,15 +254,22 @@ export function buildProceduralArena(): Group {
         pos[k * 3 + 2] = z;
         uv[k * 2] = x / 5.5;
         uv[k * 2 + 1] = z / 5.5;
+        // Broad colour drift so the tiled texture never reads as a repeat: lush, dry and shaded zones
+        const lush = fbm3(x * 0.07 + 3, 2, z * 0.07 + 3, 3, 21);
+        const dry = fbm3(x * 0.16 + 11, 5, z * 0.16 - 4, 3, 23);
+        tint[k * 3] = 0.78 + dry * 0.5;
+        tint[k * 3 + 1] = 0.72 + lush * 0.5;
+        tint[k * 3 + 2] = 0.7 + lush * 0.3;
         if (i < N && j < N) idx.push(k, k + N + 1, k + 1, k + 1, k + N + 1, k + N + 2);
       }
     }
     const geo = new BufferGeometry();
     geo.setAttribute('position', new BufferAttribute(pos, 3));
     geo.setAttribute('uv', new BufferAttribute(uv, 2));
+    geo.setAttribute('color', new BufferAttribute(tint, 3));
     geo.setIndex(idx);
     geo.computeVertexNormals();
-    const terrain = new Mesh(geo, pbrMat('ground', groundSet()));
+    const terrain = new Mesh(geo, pbrMat('ground', groundSet(), { vertexColors: true }));
     terrain.receiveShadow = true;
     terrain.frustumCulled = false;
     terrain.raycast = () => {};
@@ -369,14 +430,16 @@ export function buildProceduralArena(): Group {
       const lr = 1.5 + rnd() * 0.9;
       P.set(x, base + by, z).addScaledVector(dir, len + rb * 0.3);
       P.y += lr * 0.35;
-      M.compose(P, Q.setFromEuler(E.set(0, rnd() * 6, 0)), S.set(lr, lr * 0.68, lr));
+      M.compose(P, Q.setFromEuler(E.set(0, rnd() * 6, 0)), S.set(lr * core, lr * core * 0.68, lr * core));
       bLeaves.add(displacedBlob(16, 11, 0.7, 1.6, rnd() * 50), M);
+      crowns.push({ c: P.clone(), r: lr });
     }
     for (let c = 0; c < 3; c++) {
       const lr = 2.4 + rnd() * 1.3;
       P.set(x + (rnd() - 0.5) * 2.4, base + H - 0.6 + c * 0.9 + rnd(), z + (rnd() - 0.5) * 2.4);
-      M.compose(P, Q.setFromEuler(E.set(0, rnd() * 6, 0)), S.set(lr, lr * 0.7, lr));
+      M.compose(P, Q.setFromEuler(E.set(0, rnd() * 6, 0)), S.set(lr * core, lr * core * 0.7, lr * core));
       bLeaves.add(displacedBlob(18, 12, 0.75, 1.5, rnd() * 50), M);
+      crowns.push({ c: P.clone(), r: lr });
     }
   }
 
@@ -395,27 +458,101 @@ export function buildProceduralArena(): Group {
 
   root.add(bBark.mesh(bark), bInner.mesh(innerWood), bRock.mesh(rock), bLeaves.mesh(leaves));
 
+  // ---- Canopy leaves: sprays over every crown, facing out and up, drooping at the edges ----
+  {
+    const lm = leafMaterial().clone();
+    lm.name = 'leaves-spray';
+    lm.emissiveIntensity = 0.2;
+    lm.roughness = 0.62;
+    windy(
+      lm,
+      'float sw = sin( uTime * 1.4 + instanceMatrix[3].x * 0.8 + instanceMatrix[3].z * 0.6 ) + 0.5 * sin( uTime * 3.3 + instanceMatrix[3].y * 1.7 );\n' +
+        'transformed.z += sw * 0.09 * position.y;\n' +
+        'transformed.x += sw * 0.04 * position.y;',
+    );
+    const per = QUALITY.high ? 58 : 12;
+    let total = 0;
+    for (const cr of crowns) total += Math.round(per * cr.r * cr.r);
+    const sprays = new InstancedMesh(sprayGeometry(), lm, total);
+    const c = new Color();
+    const N3 = new Vector3();
+    const X3 = new Vector3();
+    const Y3 = new Vector3();
+    const Z3 = new Vector3();
+    let n = 0;
+    for (const cr of crowns) {
+      const cnt = Math.round(per * cr.r * cr.r);
+      for (let i = 0; i < cnt; i++) {
+        // Even spread over the crown; skip most of the underside, where a real crown is bare wood
+        const u = 1 - 2 * ((i + rnd()) / cnt);
+        const ph = i * 2.39996 + rnd();
+        const sr = Math.sqrt(Math.max(0, 1 - u * u));
+        N3.set(Math.cos(ph) * sr, u, Math.sin(ph) * sr);
+        if (N3.y < -0.45 && rnd() < 0.8) N3.y = -N3.y * rnd();
+        const shell = rnd() < 0.35 ? 0.7 + rnd() * 0.15 : 0.92 + rnd() * 0.16;
+        const bump = 1 + (fbm3(N3.x * 1.6 + cr.c.x, N3.y * 1.6, N3.z * 1.6 + cr.c.z, 2, 5) - 0.5) * 0.7;
+        P.set(cr.c.x + N3.x * cr.r * shell * bump, cr.c.y + N3.y * cr.r * 0.7 * shell * bump, cr.c.z + N3.z * cr.r * shell * bump);
+        Z3.copy(N3).multiplyScalar(0.7);
+        Z3.y += 0.75;
+        Z3.x += (rnd() - 0.5) * 0.6;
+        Z3.z += (rnd() - 0.5) * 0.6;
+        Z3.normalize();
+        Y3.set(N3.x + (rnd() - 0.5) * 1.6, -0.25 - rnd() * 0.5, N3.z + (rnd() - 0.5) * 1.6);
+        Y3.addScaledVector(Z3, -Y3.dot(Z3)).normalize();
+        X3.crossVectors(Y3, Z3);
+        const sc = (QUALITY.high ? 0.92 : 1.2) * (0.75 + rnd() * 0.6);
+        M.makeBasis(X3.multiplyScalar(sc), Y3.multiplyScalar(sc), Z3.multiplyScalar(sc));
+        M.setPosition(P);
+        sprays.setMatrixAt(n, M);
+        // Lit, yellower leaves on top and outside; deeper green underneath and inside
+        const lit = (0.5 + 0.5 * N3.y) * (shell < 0.8 ? 0.55 : 1);
+        const v = 0.7 + lit * 0.75 + rnd() * 0.3;
+        c.setRGB(v * (0.85 + lit * 0.35 + rnd() * 0.15), v * (1.0 + lit * 0.1), v * (0.7 + rnd() * 0.2));
+        sprays.setColorAt(n++, c);
+      }
+    }
+    sprays.count = n;
+    sprays.instanceMatrix.needsUpdate = true;
+    if (sprays.instanceColor) sprays.instanceColor.needsUpdate = true;
+    sprays.castShadow = true;
+    sprays.receiveShadow = true;
+    sprays.frustumCulled = false;
+    sprays.raycast = () => {};
+    root.add(sprays);
+  }
+
   // ---- Grass (instanced tufts, wind in the vertex shader) ---------------------------
   {
     const blade: number[] = [];
     const col: number[] = [];
     const nrm: number[] = [];
-    const tuft = 3;
+    // A tuft of thin, arching blades of mixed height; some dry and straw-coloured
+    const tuft = QUALITY.high ? 7 : 4;
+    const gr = mulberry(4401);
     for (let t = 0; t < tuft; t++) {
-      const a = (t / tuft) * Math.PI;
+      const a = gr() * Math.PI * 2;
       const cx = Math.cos(a);
       const cz = Math.sin(a);
-      const lean = 0.08;
-      const w = [0.03, 0.022, 0.0];
-      const h = [0, 0.2, 0.42];
-      for (let k = 0; k < 2; k++) {
-        const l = [-w[k], w[k], w[k + 1], -w[k + 1]];
-        const ys = [h[k], h[k], h[k + 1], h[k + 1]];
-        const order = k === 1 ? [0, 1, 2] : [0, 1, 2, 0, 2, 3];
-        for (const i of order) {
-          blade.push(l[i] * cx + lean * ys[i] * cz, ys[i], l[i] * cz - lean * ys[i] * cx);
-          const g = 0.3 + (ys[i] / 0.42) * 0.9;
-          col.push(g * 0.75, g, g * 0.5);
+      const ox = (gr() - 0.5) * 0.09;
+      const oz = (gr() - 0.5) * 0.09;
+      const H = 0.16 + gr() * 0.34;
+      const w0 = 0.006 + gr() * 0.006;
+      const lean = 0.15 + gr() * 0.75;
+      const dry = gr() < 0.18;
+      const seg = [0, 0.4, 0.75, 1];
+      const pt = (k: number, sgn: number) => {
+        const f = seg[k];
+        const w = w0 * (1 - f * f) * sgn;
+        const out = lean * f * f * H;
+        return [ox + w * cz + out * cx, f * H * (1 - 0.25 * lean * f), oz - w * cx + out * cz, f];
+      };
+      for (let k = 0; k < 3; k++) {
+        const q = k === 2 ? [pt(k, -1), pt(k, 1), pt(k + 1, 0)] : [pt(k, -1), pt(k, 1), pt(k + 1, 1), pt(k, -1), pt(k + 1, 1), pt(k + 1, -1)];
+        for (const v of q) {
+          blade.push(v[0], v[1], v[2]);
+          const g = 0.28 + v[3] * 0.85;
+          if (dry) col.push(g * 1.25, g * 1.05, g * 0.45);
+          else col.push(g * 0.72, g, g * 0.42);
           nrm.push(0, 1, 0);
         }
       }
@@ -425,8 +562,8 @@ export function buildProceduralArena(): Group {
     geo.setAttribute('normal', new BufferAttribute(new Float32Array(nrm), 3));
     geo.setAttribute('color', new BufferAttribute(new Float32Array(col), 3));
     const gm = new MeshStandardMaterial({
-      color: new Color(0x6f9a3a),
-      roughness: 0.75,
+      color: new Color(0x64883a),
+      roughness: 0.7,
       side: DoubleSide,
       vertexColors: true,
     });
@@ -437,19 +574,19 @@ export function buildProceduralArena(): Group {
         'transformed.x += gw * position.y * position.y * 0.55;\n' +
         'transformed.z += gw * position.y * position.y * 0.3;',
     );
-    const count = QUALITY.grassBlades / tuft;
+    const count = Math.round(QUALITY.grassBlades * (QUALITY.high ? 0.75 : 0.85));
     const inst = new InstancedMesh(geo, gm, count);
     const c = new Color();
     let placed = 0;
     let tries = 0;
     while (placed < count && tries++ < count * 4) {
       const a = rnd() * Math.PI * 2;
-      const r = 4.9 + Math.pow(rnd(), 1.5) * 24;
+      const r = 4.9 + Math.pow(rnd(), 1.7) * 24;
       const x = Math.cos(a) * r;
       const z = Math.sin(a) * r;
       // Leave bare-earth patches, matching the ground texture's dirt noise loosely
       if (fbm3(x * 0.3, 1, z * 0.3, 2, 13) > 0.62) continue;
-      const s = 0.7 + rnd() * 1.1;
+      const s = 0.8 + rnd() * 1.3;
       P.set(x, arenaHeightAt(x, z) - 0.02, z);
       M.compose(P, Q.setFromEuler(E.set(0, rnd() * 6.28, 0)), S.set(s, s * (0.7 + rnd() * 0.8), s));
       inst.setMatrixAt(placed, M);

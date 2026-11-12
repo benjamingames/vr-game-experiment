@@ -26,3 +26,5 @@ shot gallery-sofa    "quality=high&dbg=gallery,bakefast&look=-0.22,-0.35&pos=-29
 shot gallery-night   "quality=high&dbg=gallery,bakefast,night&look=-0.1,-0.9&pos=-301.5,0,1.2"
 shot arena-stump     "quality=high&dbg=monke&look=0.1,0"
 shot arena-outside   "quality=high&dbg=monke&look=0.05,-0.9&pos=13,2,-13"
+shot arena-grove     "quality=high&dbg=monke&look=0.25,-2.2&pos=8,1,6"
+shot arena-low       "quality=low&dbg=monke&look=0.25,-2.2&pos=8,1,6"

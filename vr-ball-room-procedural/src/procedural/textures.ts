@@ -456,8 +456,12 @@ void surf( vec2 uv, out vec3 c, out float h, out float r, out float m ) {
   float clump = fbm( uv * 16.0, vec2( 16.0 ), 4, uSeed + 7.0 );
   float pebble = smoothstep( 0.22, 0.1, cells( uv * 60.0, vec2( 60.0 ), uSeed + 9.0 ) ) * dirt;
   float g = 0.5 + bl * 0.7 + ( clump - 0.5 ) * 0.5;
-  vec3 grass = vec3( 0.2, 0.4, 0.1 ) * g + vec3( 0.08, 0.05, 0.0 ) * clump;
-  vec3 earth = vec3( 0.26, 0.2, 0.13 ) * ( 0.7 + bl * 0.6 );
+  vec3 grass = vec3( 0.15, 0.25, 0.07 ) * g + vec3( 0.08, 0.06, 0.0 ) * clump;
+  float straw = smoothstep( 0.74, 0.9, fbm( vec2( uv.x * 420.0, uv.y * 90.0 ), vec2( 420.0, 90.0 ), 2, uSeed + 11.0 ) );
+  grass = mix( grass, vec3( 0.4, 0.34, 0.16 ), straw * 0.45 );
+  float litter = smoothstep( 0.3, 0.12, cells( uv * 90.0, vec2( 90.0 ), uSeed + 13.0 ) );
+  vec3 earth = vec3( 0.2, 0.15, 0.1 ) * ( 0.7 + bl * 0.6 );
+  earth = mix( earth, vec3( 0.34, 0.2, 0.08 ) * ( 0.6 + clump ), litter * 0.7 );
   c = mix( grass, earth, dirt );
   c = mix( c, vec3( 0.5, 0.48, 0.45 ) * ( 0.7 + clump * 0.5 ), pebble );
   h = mix( bl * 0.8 + clump * 0.4, bl * 0.3, dirt ) + pebble * 0.8;

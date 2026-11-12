@@ -123,7 +123,7 @@ function leafGeometry(): BufferGeometry {
 
 let leafMat: MeshStandardMaterial | null = null;
 /** Leaf surface painted in code: pale midrib, forward-arching side veins, darker margin, faint mottling. */
-function leafMaterial(): MeshStandardMaterial {
+export function leafMaterial(): MeshStandardMaterial {
   if (leafMat) return leafMat;
   const W = 128;
   const H = 256;
