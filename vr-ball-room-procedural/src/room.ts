@@ -2763,6 +2763,17 @@ const sceneSkyRefs: {
 
 // ---- Gorilla Tag Map Fast Spatial Triangle Grid (Zero-Allocation Queries) --
 const GORILLA_MAP_SCALE = 1.6;
+
+// Monke Mode body. The VR rig is lowered below the ground by this share of the player's standing
+// head height, so standing upright puts the hands at ground level (no crouching or kneeling).
+const MONKE_DROP_RATIO = 0.38;
+const MONKE_DROP_MAX = 0.9; // metres
+const MONKE_DROP_EASE = 1.2; // metres per second the rig lowers or rises
+// A hand only pushes when it moves faster than this (hands resting at the sides just jitter)...
+const MONKE_MIN_HAND_SPEED = 0.3; // m/s
+// ...and a hand frame faster than this is a tracking jump, not a real push.
+const MONKE_MAX_HAND_SPEED = 10; // m/s
+const MONKE_MAX_SPEED = 9; // m/s, top speed the push momentum can build to
 const GORILLA_GRID_CELL = 2.5;
 const gorillaMapGrid = new Map<number, number[]>();
 
@@ -3447,6 +3458,8 @@ export class SettingsAndHandsSystem extends createSystem({
   private handDelta = new Vector3();
   private hasHandPrev = [false, false];
   private monkeVel = new Vector3();
+  private monkeDrop = 0; // how far the rig sits below the ground right now (Monke Mode body lowering)
+  private monkeStandingHead = 1.6; // the player's standing head height, measured when Monke Mode starts
   private mapVertSample: [number, number] = [0, 3.3];
   private handVertSample: [number, number] = [0, 3.3];
   private mapWallSample: [number, number] = [0, 0];
@@ -3757,7 +3770,8 @@ export class SettingsAndHandsSystem extends createSystem({
     this.monkeVel.set(0, 0, 0);
     this.spawnPos.set(0, 0, 0.6);
     this.player.position.copy(this.spawnPos);
-    locomotion?.setPlayerPosition?.(this.spawnPos);
+    this.player.position.y -= this.monkeDrop;
+    locomotion?.setPlayerPosition?.(this.player.position);
     this.world.getSystem(ResetSystem)?.resetAll();
 
     // If the floating Settings Menu is currently open, keep it positioned right in front of the player at the spawnpoint
@@ -3787,10 +3801,55 @@ export class SettingsAndHandsSystem extends createSystem({
     this.hasHandPrev[0] = false;
     this.hasHandPrev[1] = false;
     this.monkeVel.set(0, 0, 0);
+    this.monkeDrop = 0;
+    if (enabled) this.calibrateMonkeBody();
 
     // Switching to Monke Mode automatically spawns you in the Monke Map (Giant Stump);
     // switching back to Normal Mode returns to the Basic Map (and you can also toggle maps separately!)
     this.applyMapMode(enabled);
+
+    // In Monke Mode this system owns the rig position. The locomotor runs in a worker that reports
+    // positions a few frames late, so while it is active it keeps tugging the rig back toward stale
+    // positions (the rig and both controllers shake). Pause it for Monke Mode, resume it after.
+    const locomotionSystem = this.world.getSystem(LocomotionSystem);
+    if (enabled) locomotionSystem?.stop();
+    else locomotionSystem?.play();
+  }
+
+  /** Monke Mode just started: measure how tall the player stands so the body can be lowered to match. */
+  private calibrateMonkeBody() {
+    this.camera.getWorldPosition(this.headPos);
+    const h = this.headPos.y - this.player.position.y;
+    this.monkeStandingHead = h > 0.6 ? h : 1.6;
+  }
+
+  /**
+   * Lowers the rig below the ground in Monke Mode so an upright player's hands reach the floor.
+   * The standing height only ever rises quickly (stand up straight) and decays very slowly, so
+   * ducking or leaning does not change how far the body is lowered.
+   */
+  private easeMonkeDrop(dt: number) {
+    let goal = 0;
+    if (this.monkeMode) {
+      const h = this.headPos.y - this.player.position.y;
+      this.monkeStandingHead = Math.max(h, this.monkeStandingHead - 0.01 * dt);
+      goal = Math.min(MONKE_DROP_MAX, Math.max(0, this.monkeStandingHead * MONKE_DROP_RATIO));
+    }
+    const step = MONKE_DROP_EASE * dt;
+    this.monkeDrop += Math.max(-step, Math.min(step, goal - this.monkeDrop));
+  }
+
+  /** Controllers must always render at real-world size, whatever happens to the rig. */
+  private pinControllerScale() {
+    const s = this.player.scale;
+    if (s.x !== 1 || s.y !== 1 || s.z !== 1) s.set(1, 1, 1);
+    const adapters = this.input.visualAdapters.controller;
+    for (const adapter of [adapters.left, adapters.right]) {
+      const model = (adapter as unknown as { visual?: { model?: Object3D } }).visual?.model;
+      if (model && (model.scale.x !== 1 || model.scale.y !== 1 || model.scale.z !== 1)) {
+        model.scale.set(1, 1, 1);
+      }
+    }
   }
 
   private findSceneLights() {
@@ -3951,6 +4010,9 @@ export class SettingsAndHandsSystem extends createSystem({
 
     const isHoldingObject = this.queries.grabbed.entities.size > 0;
 
+    // Ground height under the player right now (the rig itself sits `monkeDrop` below it in Monke Mode)
+    const groundNow = this.player.position.y + this.monkeDrop;
+
     // 1. MONKE MODE: Move ONLY when your hands touch the floor / ground surface (no air-floating!)
     for (let idx = 0; idx < 2; idx++) {
       const side = idx === 0 ? 'left' : 'right';
@@ -3967,7 +4029,8 @@ export class SettingsAndHandsSystem extends createSystem({
             .sub(this.handRelPrev[idx]);
           const handMoveLen = this.handDelta.length();
 
-          if (handMoveLen > 0.0004 && handMoveLen < 0.45) {
+          const handSpeed = handMoveLen / dt;
+          if (handSpeed > MONKE_MIN_HAND_SPEED && handSpeed < MONKE_MAX_HAND_SPEED) {
             const hx = this.handWorldPos.x;
             const hy = this.handWorldPos.y;
             const hz = this.handWorldPos.z;
@@ -3980,15 +4043,15 @@ export class SettingsAndHandsSystem extends createSystem({
               hy <= TABLE.height + 0.22;
 
             // Check if the hand is actually touching the floor / ground / ramp under the hand
-            let touchingFloor = touchingTable || (hy >= this.player.position.y - 0.25 && hy <= this.player.position.y + 0.30);
+            let touchingFloor = touchingTable || (hy >= groundNow - 0.25 && hy <= groundNow + 0.30);
 
             if (!touchingFloor && this.monkeMap) {
-              sampleGorillaMapVertical(hx, this.player.position.y, hz, this.handVertSample);
+              sampleGorillaMapVertical(hx, groundNow, hz, this.handVertSample);
               const handGroundY = this.handVertSample[0];
               if (handGroundY > -100 && hy >= handGroundY - 0.18 && hy <= handGroundY + 0.30) {
                 touchingFloor = true;
               } else if (
-                hy <= this.player.position.y + 0.45 &&
+                hy <= groundNow + 0.45 &&
                 isHandTouchingGorillaMap(hx, hy, hz, 0.24)
               ) {
                 touchingFloor = true;
@@ -4008,6 +4071,11 @@ export class SettingsAndHandsSystem extends createSystem({
               const vz = pz / dt;
               this.monkeVel.x = this.monkeVel.x * 0.4 + vx * 0.65;
               this.monkeVel.z = this.monkeVel.z * 0.4 + vz * 0.65;
+              const pushSpeed = Math.hypot(this.monkeVel.x, this.monkeVel.z);
+              if (pushSpeed > MONKE_MAX_SPEED) {
+                this.monkeVel.x *= MONKE_MAX_SPEED / pushSpeed;
+                this.monkeVel.z *= MONKE_MAX_SPEED / pushSpeed;
+              }
 
               // Only give a small upward hop when slamming a hand sharply downward into the floor
               // (never add continuous upward lift that would make you float while moving hands!)
@@ -4066,8 +4134,13 @@ export class SettingsAndHandsSystem extends createSystem({
 
     // Integrate gravity, momentum, and collision when in Monke Mode OR when on the Monke Map
     if (this.monkeMode || this.monkeMap) {
+      // Everything below works in "feet" height: where the player touches the ground. In Monke Mode
+      // the rig itself sits `monkeDrop` below that, which is what lowers the body.
+      let feetY = this.player.position.y + this.monkeDrop;
+      this.easeMonkeDrop(dt);
+
       this.player.position.x += this.monkeVel.x * dt;
-      this.player.position.y += this.monkeVel.y * dt;
+      feetY += this.monkeVel.y * dt;
       this.player.position.z += this.monkeVel.z * dt;
 
       if (this.monkeMap) {
@@ -4080,7 +4153,7 @@ export class SettingsAndHandsSystem extends createSystem({
 
         resolveGorillaMapWallPush(
           bodyX,
-          this.player.position.y,
+          feetY,
           bodyZ,
           0.20,
           this.mapWallSample,
@@ -4091,7 +4164,7 @@ export class SettingsAndHandsSystem extends createSystem({
         // Sample Gorilla Tag map ground/ramp/branch height under the player
         sampleGorillaMapVertical(
           this.mapWallSample[0],
-          this.player.position.y,
+          feetY,
           this.mapWallSample[1],
           this.mapVertSample,
         );
@@ -4101,22 +4174,22 @@ export class SettingsAndHandsSystem extends createSystem({
         const overTable =
           Math.abs(this.mapWallSample[0]) < TABLE.width / 2 - 0.04 &&
           Math.abs(this.mapWallSample[1] - TABLE.z) < TABLE.depth / 2 - 0.04 &&
-          this.player.position.y >= TABLE.height - 0.22 &&
-          this.player.position.y <= TABLE.height + 1.8;
+          feetY >= TABLE.height - 0.22 &&
+          feetY <= TABLE.height + 1.8;
         if (overTable && TABLE.height > groundY) {
           groundY = TABLE.height;
         }
 
         // Always pull the player down with crisp gravity (12.5 m/s²) when above the floor so you drop immediately!
         if (groundY > -100) {
-          if (this.player.position.y > groundY + 0.005) {
+          if (feetY > groundY + 0.005) {
             this.monkeVel.y -= 12.5 * dt;
-            if (this.player.position.y + this.monkeVel.y * dt <= groundY) {
-              this.player.position.y = groundY;
+            if (feetY + this.monkeVel.y * dt <= groundY) {
+              feetY = groundY;
               if (this.monkeVel.y < 0) this.monkeVel.y = 0;
             }
           } else {
-            this.player.position.y = groundY;
+            feetY = groundY;
             if (this.monkeVel.y < 0) this.monkeVel.y = 0;
           }
         } else {
@@ -4127,17 +4200,17 @@ export class SettingsAndHandsSystem extends createSystem({
         const overTable =
           Math.abs(this.headPos.x) < TABLE.width / 2 - 0.05 &&
           Math.abs(this.headPos.z - TABLE.z) < TABLE.depth / 2 - 0.05 &&
-          this.player.position.y >= TABLE.height - 0.18;
+          feetY >= TABLE.height - 0.18;
         const groundY = overTable ? TABLE.height : 0;
 
-        if (this.player.position.y > groundY + 0.005) {
+        if (feetY > groundY + 0.005) {
           this.monkeVel.y -= 12.5 * dt;
-          if (this.player.position.y + this.monkeVel.y * dt <= groundY) {
-            this.player.position.y = groundY;
+          if (feetY + this.monkeVel.y * dt <= groundY) {
+            feetY = groundY;
             if (this.monkeVel.y < 0) this.monkeVel.y = 0;
           }
         } else {
-          this.player.position.y = groundY;
+          feetY = groundY;
           if (this.monkeVel.y < 0) this.monkeVel.y = 0;
         }
 
@@ -4145,18 +4218,30 @@ export class SettingsAndHandsSystem extends createSystem({
         const maxZ = ROOM.depth / 2 - 0.32;
         this.player.position.x = Math.max(-maxX, Math.min(maxX, this.player.position.x));
         this.player.position.z = Math.max(-maxZ, Math.min(maxZ, this.player.position.z));
-        this.player.position.y = Math.min(1.85, this.player.position.y);
+        feetY = Math.min(1.85, feetY);
       }
 
-      // Safety respawn inside the Giant Stump if the player ever falls below the map
-      if (this.player.position.y < -85) {
+      this.player.position.y = feetY - this.monkeDrop;
+
+      // Safety respawn inside the Giant Stump if the player ever falls below the map (or the maths broke)
+      if (
+        feetY < -85 ||
+        !Number.isFinite(
+          this.player.position.x + this.player.position.y + this.player.position.z +
+            this.monkeVel.x + this.monkeVel.y + this.monkeVel.z,
+        )
+      ) {
         this.spawnPos.set(0, 0, 0.6);
         this.player.position.copy(this.spawnPos);
+        this.player.position.y -= this.monkeDrop;
         this.monkeVel.set(0, 0, 0);
       }
 
-      // Keep LocomotionSystem synchronized with the player position
-      this.world.getSystem(LocomotionSystem)?.setPlayerPosition(this.player.position);
+      // Keep LocomotionSystem synchronized with the player position (it is paused in Monke Mode,
+      // where this system alone owns the rig)
+      if (!this.monkeMode) {
+        this.world.getSystem(LocomotionSystem)?.setPlayerPosition(this.player.position);
+      }
 
       const damping = Math.exp(-4.2 * dt);
       this.monkeVel.x *= damping;
@@ -4190,6 +4275,8 @@ export class SettingsAndHandsSystem extends createSystem({
       playSynthTone(this.monkeMode ? 320 : 440, 0.18, 'sawtooth', this.monkeMode ? 640 : 587.33);
     }
     this.wasGKeyDown = isGDown;
+
+    this.pinControllerScale();
   }
 }
 

@@ -16,7 +16,10 @@ running, and tell him exactly what to reload or restart.
   - Opens with the left controller's menu button, X/Y, or the `M` key.
   - Day/Night toggle.
   - Hand models.
-  - **Monke Mode:** Gorilla Tag-style hand locomotion.
+  - **Monke Mode:** Gorilla Tag-style hand locomotion. The body is lowered automatically (the VR rig sits
+    below the ground by `MONKE_DROP_RATIO` of the player's standing head height), so standing upright puts the
+    hands at ground level and nobody has to crouch. While it is on, `SettingsAndHandsSystem` owns the rig and
+    `LocomotionSystem` is paused (see `applyMonkeMode`). Tunables: the `MONKE_*` constants next to `GORILLA_MAP_SCALE`.
   - Map choice: **Basic Map** (oak room) or **Monke Map** (Giant Stump, `public/gorilla-tag-map.glb`).
 - Runs in the **Quest Browser via WebXR**, with nothing installed on the headset.
 - **Live site:** https://benjamingames.github.io/vr-game-experiment/

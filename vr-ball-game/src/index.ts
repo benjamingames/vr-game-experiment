@@ -35,4 +35,12 @@ World.create(
   world.registerSystem(ResetSystem);
   world.registerSystem(MazeSystem);
   buildRoom(world);
+
+  // Dev-only handles for scripted testing (emulator / console); stripped from production builds.
+  if (import.meta.env.DEV) {
+    Object.assign(window, {
+      __world: world,
+      __settings: world.getSystem(SettingsAndHandsSystem),
+    });
+  }
 });
