@@ -1,9 +1,10 @@
 /**
  * Lario, the stretchy head: an original character built in code. A shaped skull with a jaw, eye
  * sockets and a neck in a knitted roll collar; wet eyes with fibrous hazel irises; a ribbed teal
- * beanie with a pom-pom; auburn hair. Every pullable feature (nose, cheeks, lips, beanie, ears,
- * eyelids with brows, chin) is its own mesh so room.ts can make it grabbable and elastic.
- * The head faces -Z and is about twice life size; all parts are centred on their own origin.
+ * beanie with a pom-pom; auburn hair. The face is ONE continuous skin surface with the nose, lids,
+ * cheeks, lips and chin sculpted into it. Pulling a feature drags the skin around its grab point
+ * (`LarioSkin`), so the face stretches like rubber instead of parts coming off. The beanie and the
+ * ears are separate pieces. The head faces -Z and is about twice life size.
  */
 import {
   BufferGeometry,
@@ -11,15 +12,20 @@ import {
   CircleGeometry,
   Color,
   CylinderGeometry,
+  Euler,
+  Float32BufferAttribute,
   Group,
   LatheGeometry,
+  Matrix4,
   Mesh,
   MeshPhysicalMaterial,
   MeshStandardMaterial,
   SRGBColorSpace,
   SphereGeometry,
   TorusGeometry,
+  Quaternion,
   Vector2,
+  Vector3,
 } from '@iwsdk/core';
 import { fabric, skin } from './materials.js';
 import { QUALITY } from './quality.js';
@@ -74,11 +80,113 @@ function hair(): MeshStandardMaterial {
   return hairMat;
 }
 
-/** Skull, jaw and eye sockets in one skin surface, with back hair, sideburns, eyes, mouth, neck and collar attached. */
-export function larioHead(): Mesh {
-  const R = 0.22;
-  const g = new SphereGeometry(R, seg(72), seg(56));
+const HEAD_R = 0.22;
+const G = (x: number, y: number, x0: number, y0: number, rx: number, ry: number) =>
+  Math.exp(-(((x - x0) / rx) ** 2) - ((y - y0) / ry) ** 2);
+const ss = (a: number, b: number, v: number) => {
+  const t = Math.max(0, Math.min(1, (v - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
+
+/** Grab points on the skin: part id -> [x, y] on the face (in head radii) and how far the pull reaches (metres). */
+const HANDLES: Array<{ id: number; x: number; y: number; reach: number }> = [
+  { id: 0, x: 0, y: -0.06, reach: 0.085 },
+  { id: 1, x: -0.42, y: -0.1, reach: 0.1 },
+  { id: 2, x: 0.42, y: -0.1, reach: 0.1 },
+  { id: 3, x: 0, y: -0.575, reach: 0.078 },
+  { id: 7, x: -0.34, y: 0.33, reach: 0.06 },
+  { id: 8, x: 0.34, y: 0.33, reach: 0.06 },
+  { id: 9, x: 0, y: -0.9, reach: 0.085 },
+];
+
+interface Target {
+  geo: BufferGeometry;
+  rest: Float32Array;
+  /** Per handle: affected vertex indices and their weights */
+  idx: Uint32Array[];
+  w: Float32Array[];
+}
+
+/** Rubber-sheet deformation of the face: each grab point drags the skin around it, fading with distance. */
+export class LarioSkin {
+  homes = new Map<number, Vector3>();
+  private targets: Target[] = [];
+  private pull = new Map<number, Vector3>();
+  private dirty = false;
+
+  /** Head-local position of a grab point. */
+  home(id: number): Vector3 {
+    return this.homes.get(id)!;
+  }
+
+  has(id: number) {
+    return this.homes.has(id);
+  }
+
+  addTarget(geo: BufferGeometry) {
+    const pos = geo.attributes.position;
+    const rest = new Float32Array(pos.array as ArrayLike<number>);
+    const idx: Uint32Array[] = [];
+    const w: Float32Array[] = [];
+    for (const h of HANDLES) {
+      const c = this.homes.get(h.id)!;
+      const ii: number[] = [];
+      const ww: number[] = [];
+      for (let i = 0; i < pos.count; i++) {
+        const d2 = (rest[i * 3] - c.x) ** 2 + (rest[i * 3 + 1] - c.y) ** 2 + (rest[i * 3 + 2] - c.z) ** 2;
+        const q = 1 - d2 / (h.reach * h.reach);
+        if (q > 0) {
+          ii.push(i);
+          ww.push(q * q);
+        }
+      }
+      idx.push(new Uint32Array(ii));
+      w.push(new Float32Array(ww));
+    }
+    this.targets.push({ geo, rest, idx, w });
+  }
+
+  setPull(id: number, dx: number, dy: number, dz: number) {
+    let p = this.pull.get(id);
+    if (!p) this.pull.set(id, (p = new Vector3()));
+    if (Math.abs(p.x - dx) + Math.abs(p.y - dy) + Math.abs(p.z - dz) < 1e-5) return;
+    p.set(dx, dy, dz);
+    this.dirty = true;
+  }
+
+  apply() {
+    if (!this.dirty) return;
+    this.dirty = false;
+    for (const t of this.targets) {
+      const arr = t.geo.attributes.position.array as Float32Array;
+      arr.set(t.rest);
+      HANDLES.forEach((h, k) => {
+        const p = this.pull.get(h.id);
+        if (!p || p.lengthSq() < 1e-10) return;
+        const ii = t.idx[k];
+        const ww = t.w[k];
+        for (let n = 0; n < ii.length; n++) {
+          const i = ii[n] * 3;
+          arr[i] += p.x * ww[n];
+          arr[i + 1] += p.y * ww[n];
+          arr[i + 2] += p.z * ww[n];
+        }
+      });
+      t.geo.attributes.position.needsUpdate = true;
+      t.geo.computeVertexNormals();
+    }
+  }
+}
+
+/**
+ * The head: skull, jaw and a fully sculpted face in one skin surface (vertex colours tint the
+ * lips, flush and lash lines), with eyes, brows, hair, neck and collar attached.
+ */
+export function larioHead(): { head: Mesh; skin: LarioSkin } {
+  const R = HEAD_R;
+  const g = new SphereGeometry(R, seg(220), seg(170));
   const p = g.attributes.position;
+  const col = new Float32Array(p.count * 3);
   for (let i = 0; i < p.count; i++) {
     let x = p.getX(i) / R;
     let y = p.getY(i) / R;
@@ -86,28 +194,138 @@ export function larioHead(): Mesh {
     x *= 0.96;
     y *= y > 0 ? 1.08 : 1.1;
     if (y < 0) {
-      // Jaw: narrows toward the chin, squarer at the angle of the jaw
       const t = -y;
-      x *= 1 - 0.3 * t * t;
+      x *= 1 - 0.2 * t * t - 0.08 * t * t * t * t;
       z *= 1 - 0.1 * t * t;
     }
+    let cr = 1;
+    let cg = 1;
+    let cb = 1;
     if (z < 0) {
       z *= 0.94;
-      // Eye sockets and the hollow under each cheekbone
-      for (const s of [-1, 1]) {
-        const d = Math.hypot(x - s * 0.34, y - 0.19);
-        z += 0.085 * Math.exp(-(d * d) / 0.03);
-        const d2 = Math.hypot(x - s * 0.5, y + 0.42);
-        z += 0.03 * Math.exp(-(d2 * d2) / 0.05);
-      }
-      // Brow ridge
-      z -= 0.03 * Math.exp(-((y - 0.42) * (y - 0.42)) / 0.012) * Math.exp(-(x * x) / 0.35);
+      const front = ss(-0.05, -0.4, z);
+      const ax = Math.abs(x);
+      let F = 0;
+      // Eye sockets, brow ridge, lids
+      F -= 0.075 * G(ax, y, 0.34, 0.19, 0.17, 0.15);
+      F -= 0.02 * G(ax, y, 0.5, -0.42, 0.2, 0.2);
+      F += 0.045 * G(ax, y, 0.33, 0.47, 0.22, 0.06) + 0.02 * G(x, y, 0, 0.48, 0.15, 0.08);
+      F += 0.075 * G(ax, y, 0.34, 0.318, 0.165, 0.05);
+      F += 0.045 * G(ax, y, 0.34, 0.04, 0.15, 0.045);
+      // Nose: bridge widening and rising to the tip, wings, nostrils
+      const t = Math.max(0, Math.min(1, (0.42 - y) / 0.52));
+      const wd = 0.05 + 0.062 * t;
+      F += (0.05 + 0.31 * Math.pow(t, 1.5)) * ss(-0.2, -0.1, y) * ss(0.52, 0.4, y) * Math.exp(-((x / wd) ** 2));
+      F += 0.1 * G(ax, y, 0.1, -0.085, 0.05, 0.055);
+      const nostril = G(ax, y, 0.062, -0.155, 0.03, 0.026);
+      F -= 0.03 * nostril;
+      // Cheeks, muzzle, lips with a parting line that lifts at the corners, chin
+      const cheek = G(ax, y, 0.42, -0.1, 0.2, 0.18);
+      F += 0.05 * cheek;
+      F += 0.045 * G(x, y, 0, -0.55, 0.3, 0.2);
+      F -= 0.012 * G(x, y, 0, -0.4, 0.025, 0.08);
+      const part = -0.578 + 0.35 * x * x;
+      const upper = G(x, y, 0, part + 0.06, 0.25, 0.045) * (1 - 0.3 * G(x, y, 0, -0.49, 0.03, 0.04));
+      const lower = G(x, y, 0, part - 0.06, 0.2, 0.052);
+      const crease = G(x, y, 0, part, 0.27, 0.02);
+      F += 0.05 * upper + 0.062 * lower - 0.036 * crease;
+      F -= 0.02 * G(x, y, 0, -0.73, 0.14, 0.05);
+      F += 0.075 * G(x, y, 0, -0.9, 0.17, 0.13);
+      z -= F * front;
+      // Colour: flush on cheeks and nose tip, lips, the dark parting line, lash lines, nostrils
+      const flush = Math.min(1, cheek * 0.55 + G(x, y, 0, -0.07, 0.1, 0.1) * 0.5) * front;
+      cr *= 1;
+      cg *= 1 - 0.13 * flush;
+      cb *= 1 - 0.16 * flush;
+      const lip = ss(0.22, 0.5, Math.max(upper, lower)) * ss(0.32, 0.24, ax) * front;
+      cr += (0.78 - cr) * lip;
+      cg += (0.46 - cg) * lip;
+      cb += (0.5 - cb) * lip;
+      const dark = Math.min(1, ss(0.45, 0.9, crease) * ss(0.29, 0.23, ax) + nostril * 0.9) * front;
+      cr += (0.32 - cr) * dark;
+      cg += (0.16 - cg) * dark;
+      cb += (0.15 - cb) * dark;
+      const lash = ss(0.4, 0.8, G(ax, y, 0.34, 0.268, 0.14, 0.018)) * front;
+      cr += (0.22 - cr) * lash;
+      cg += (0.13 - cg) * lash;
+      cb += (0.1 - cb) * lash;
     }
     p.setXYZ(i, x * R, y * R, z * R);
+    col[i * 3] = cr;
+    col[i * 3 + 1] = cg;
+    col[i * 3 + 2] = cb;
   }
+  g.setAttribute('color', new Float32BufferAttribute(col, 3));
   g.computeVertexNormals();
-  const head = new Mesh(g, skin(LARIO.skin));
+  const skinMat = skin(LARIO.skin);
+  skinMat.vertexColors = true;
+  const head = new Mesh(g, skinMat);
   head.castShadow = true;
+  head.receiveShadow = true;
+  head.frustumCulled = false;
+
+  // Grab points sit on the sculpted surface
+  const sk = new LarioSkin();
+  const onSkin = (fx: number, fy: number) => {
+    let best = 0;
+    let bd = 1e9;
+    for (let i = 0; i < p.count; i++) {
+      if (p.getZ(i) > -0.05) continue;
+      const d = (p.getX(i) - fx * R) ** 2 + (p.getY(i) - fy * R) ** 2;
+      if (d < bd) {
+        bd = d;
+        best = i;
+      }
+    }
+    return new Vector3(p.getX(best), p.getY(best), p.getZ(best));
+  };
+  for (const h of HANDLES) sk.homes.set(h.id, onSkin(h.x, h.y));
+  sk.addTarget(g);
+
+  // Eyebrows: individual hairs rooted on the brow ridge, moving with the skin
+  {
+    const strand = new CylinderGeometry(0.0015, 0.0032, 0.03, 5);
+    const sp = strand.attributes.position;
+    const sn = strand.attributes.normal;
+    const si = strand.index!;
+    const pos: number[] = [];
+    const nrm: number[] = [];
+    const idx: number[] = [];
+    const M = new Matrix4();
+    const Q = new Quaternion();
+    const E = new Euler();
+    const v = new Vector3();
+    const one = new Vector3(1, 1, 1);
+    for (const side of [-1, 1]) {
+      for (let k = 0; k < 30; k++) {
+        const t = k / 29;
+        for (const row of [0, 1, 2]) {
+          const root = onSkin(side * (0.15 + t * 0.4), 0.46 + Math.sin(t * Math.PI) * 0.035 - t * 0.03 + row * 0.02);
+          root.z -= 0.004;
+          Q.setFromEuler(E.set(-0.25, 0, side * (-1.2 - t * 0.35 + row * 0.15)));
+          M.compose(root, Q, one);
+          const base = pos.length / 3;
+          for (let i = 0; i < sp.count; i++) {
+            v.set(sp.getX(i), sp.getY(i), sp.getZ(i)).applyMatrix4(M);
+            pos.push(v.x, v.y, v.z);
+            v.set(sn.getX(i), sn.getY(i), sn.getZ(i)).applyQuaternion(Q);
+            nrm.push(v.x, v.y, v.z);
+          }
+          for (let i = 0; i < si.count; i++) idx.push(base + si.getX(i));
+        }
+      }
+    }
+    const bg = new BufferGeometry();
+    bg.setAttribute('position', new Float32BufferAttribute(pos, 3));
+    bg.setAttribute('normal', new Float32BufferAttribute(nrm, 3));
+    bg.setAttribute('uv', new Float32BufferAttribute(new Float32Array((pos.length / 3) * 2), 2));
+    bg.setIndex(idx);
+    const brows = new Mesh(bg, hair());
+    brows.frustumCulled = false;
+    brows.raycast = () => {};
+    head.add(brows);
+    sk.addTarget(bg);
+  }
 
   // Hair showing below the beanie at the back and sides
   const back = part(head, new Mesh(new SphereGeometry(0.224, seg(40), seg(28)), hair()), 0, 0.02, 0.055);
@@ -117,22 +335,12 @@ export function larioHead(): Mesh {
     burn.scale.set(0.32, 1.25, 0.6);
     head.add(larioEye(s));
   }
-  // Mouth interior with a row of teeth; the lips are a separate pullable part in front of it
-  const mouth = part(head, new Mesh(new SphereGeometry(0.046, seg(20), seg(14)), new MeshStandardMaterial({ color: new Color(0x3a0f12), roughness: 0.5 })), 0, -0.125, -0.184);
-  mouth.scale.set(1.25, 0.42, 0.5);
-  mouth.castShadow = false;
-  const enamel = new MeshPhysicalMaterial({ color: new Color(0xf3eee2), roughness: 0.18, clearcoat: 0.8, clearcoatRoughness: 0.1 });
-  for (let i = -3; i <= 3; i++) {
-    const tooth = part(head, new Mesh(new SphereGeometry(0.0085, 12, 10), enamel), i * 0.0145, -0.117 - Math.abs(i) * 0.0012, -0.204 + Math.abs(i) * 0.0025);
-    tooth.scale.set(0.85, 1.15, 0.55);
-    tooth.castShadow = false;
-  }
   // Neck and a knitted roll collar
   const lathe = (pts: Array<[number, number]>, n = 48) => new LatheGeometry(pts.map(([r, y]) => new Vector2(r, y)), seg(n));
   part(head, new Mesh(lathe([[0.112, -0.16], [0.102, -0.11], [0.098, -0.05], [0.1, 0]]), skin(LARIO.skin)), 0, -0.19, 0.035);
   const collar = part(head, new Mesh(ribbed(new TorusGeometry(0.108, 0.03, seg(16), seg(96)), 40, 0.0035), fabric(LARIO.beanie)), 0, -0.325, 0.035);
   collar.rotation.x = Math.PI / 2;
-  return head;
+  return { head, skin: sk };
 }
 
 /** Knit ribs: pushes vertices in and out around the ring axis (the torus / cap axis is local Z or Y). */
@@ -196,7 +404,7 @@ function irisTexture(): CanvasTexture {
 /** One eye: wet white, fibrous iris and a clear cornea that catches the light. */
 function larioEye(side: number): Group {
   const g = new Group();
-  g.position.set(side * 0.075, 0.04, -0.168);
+  g.position.set(side * 0.075, 0.0415, -0.15);
   const white = new MeshPhysicalMaterial({ color: new Color(0xf2ece4), roughness: 0.16, clearcoat: 1, clearcoatRoughness: 0.04 });
   const ball = part(g, new Mesh(new SphereGeometry(0.043, seg(32), seg(24)), white), 0, 0, 0);
   ball.scale.z = 0.8;
@@ -216,48 +424,6 @@ function larioEye(side: number): Group {
   cornea.scale.z = 0.42;
   cornea.castShadow = false;
   return g;
-}
-
-/** Nose: tip, bridge running up to the brow, flared wings and nostrils. */
-export function larioNose(): Mesh {
-  const m = skin(LARIO.rosy);
-  const tipG = new SphereGeometry(0.034, seg(28), seg(20));
-  tipG.scale(1, 0.86, 1);
-  const tip = new Mesh(tipG, m);
-  const bridge = part(tip, new Mesh(new CylinderGeometry(0.015, 0.027, 0.12, seg(20), 1), m), 0, 0.055, 0.028);
-  bridge.rotation.x = -0.42;
-  const dark = new MeshStandardMaterial({ color: new Color(0x4a2018), roughness: 0.8 });
-  for (const s of [-1, 1]) {
-    const wing = part(tip, new Mesh(new SphereGeometry(0.02, seg(20), seg(14)), m), s * 0.027, -0.008, 0.018);
-    wing.scale.set(1, 0.8, 1.1);
-    const nostril = part(tip, new Mesh(new SphereGeometry(0.0095, 12, 10), dark), s * 0.017, -0.027, 0.006);
-    nostril.scale.set(1.2, 0.5, 1);
-    nostril.castShadow = false;
-  }
-  return tip;
-}
-
-/** Soft cheek mound. */
-export function larioCheek(): Mesh {
-  const g = new SphereGeometry(0.058, seg(26), seg(20));
-  g.scale(1.05, 0.9, 0.55);
-  return new Mesh(g, skin(LARIO.rosy));
-}
-
-/** Lips: a two-lobed upper lip with a bow, a fuller lower lip. */
-export function larioLips(): Mesh {
-  const m = new MeshPhysicalMaterial({ color: new Color(LARIO.lips), roughness: 0.38, clearcoat: 0.35, clearcoatRoughness: 0.3 });
-  const lowG = new SphereGeometry(0.04, seg(26), seg(18));
-  lowG.scale(1.3, 0.4, 0.62);
-  const low = new Mesh(lowG, m);
-  for (const s of [-1, 1]) {
-    const up = part(low, new Mesh(new SphereGeometry(0.031, seg(22), seg(16)), m), s * 0.021, 0.021, 0.002);
-    up.scale.set(1.35, 0.38, 0.6);
-    up.rotation.z = s * -0.14;
-    const corner = part(low, new Mesh(new SphereGeometry(0.01, 12, 10), m), s * 0.052, 0.012, 0.012);
-    corner.scale.set(1.2, 0.7, 0.8);
-  }
-  return low;
 }
 
 /** Ribbed knit beanie pushed back on the head, with a folded cuff and a woolly pom-pom. */
@@ -306,35 +472,4 @@ export function larioEar(side: number): Mesh {
   const lobe = part(ear, new Mesh(new SphereGeometry(0.02, seg(16), seg(12)), m), side * 0.008, -0.056, -0.004);
   lobe.scale.set(0.55, 1, 0.9);
   return ear;
-}
-
-/** Upper eyelid with a lash line and an eyebrow made of individual hairs. */
-export function larioEyelid(side: number): Mesh {
-  const g = new SphereGeometry(0.048, seg(24), seg(16));
-  g.scale(1.12, 0.5, 0.85);
-  const lid = new Mesh(g, skin(LARIO.rosy));
-  const lash = part(lid, new Mesh(new TorusGeometry(0.041, 0.0026, 6, seg(24), Math.PI), new MeshStandardMaterial({ color: new Color(0x1c0f08), roughness: 0.6 })), 0, -0.036, -0.03);
-  lash.scale.set(1.05, 0.62, 1);
-  lash.castShadow = false;
-  const strand = new CylinderGeometry(0.0016, 0.0034, 0.03, 5);
-  const hm = hair();
-  for (let i = 0; i < 22; i++) {
-    const t = i / 21;
-    const x = side * (-0.045 + t * 0.09);
-    const y = 0.026 + Math.sin(t * Math.PI) * 0.012 - t * 0.004;
-    for (const row of [0, 1]) {
-      const h = part(lid, new Mesh(strand, hm), x, y + row * 0.006, -0.03 - Math.sin(t * Math.PI) * 0.008);
-      h.rotation.z = side * (-1.15 - t * 0.3 + row * 0.18);
-      h.rotation.x = -0.2;
-      h.castShadow = false;
-    }
-  }
-  return lid;
-}
-
-/** Chin. */
-export function larioChin(): Mesh {
-  const g = new SphereGeometry(0.056, seg(26), seg(20));
-  g.scale(1.15, 0.72, 0.8);
-  return new Mesh(g, skin(LARIO.skin));
 }

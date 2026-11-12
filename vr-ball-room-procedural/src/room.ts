@@ -14,6 +14,7 @@ import {
   LocomotionSystem,
   Matrix4,
   Mesh,
+  MeshBasicMaterial,
   MeshStandardMaterial,
   MovementMode,
   Object3D,
@@ -94,14 +95,10 @@ import {
 } from './procedural/stations.js';
 import {
   LARIO,
+  LarioSkin,
   larioBeanie,
-  larioCheek,
-  larioChin,
   larioEar,
-  larioEyelid,
   larioHead,
-  larioLips,
-  larioNose,
 } from './procedural/face.js';
 import { setTextureRenderer } from './procedural/textures.js';
 import { buildProceduralEnvironment, procEnv } from './procedural/env.js';
@@ -1523,10 +1520,13 @@ const FACE_BTN_POS: [number, number, number] = [-0.52, 1.48, 1.52];
  * 5=Left Ear, 6=Right Ear, 7=Left Eyelid, 8=Right Eyelid, 9=Chin
  * plus a floating elastic-snap reset button beside the head. The shapes live in procedural/face.ts.
  */
+let larioSkin: LarioSkin | null = null;
+
 function buildStretchyHead(world: World) {
   const { x: hx, y: hy, z: hz } = HEAD_POS;
-  const headBase = larioHead();
+  const { head: headBase, skin: faceSkin } = larioHead();
   headBase.position.set(hx, hy, hz);
+  larioSkin = faceSkin;
   world.createTransformEntity(headBase);
 
   // Floating Reset Button next to the head (also holds the 10 stretch-bridge meshes)
@@ -1551,6 +1551,7 @@ function buildStretchyHead(world: World) {
     home: [number, number, number],
     bridgeColor: number,
     baseRadius: number,
+    withBridge = true,
   ) => {
     mesh.position.set(...home);
     mesh.castShadow = true;
@@ -1566,6 +1567,7 @@ function buildStretchyHead(world: World) {
       baseRadius,
     });
     e.getVectorView(FacePart, 'home').set(home);
+    if (!withBridge) return;
 
     const bridge = new Mesh(
       new CylinderGeometry(1, 1, 1, 16),
@@ -1577,23 +1579,33 @@ function buildStretchyHead(world: World) {
     btnHousing.add(bridge);
   };
 
-  addFacePart(0, larioNose(), [hx, hy - 0.02, hz - 0.236], LARIO.rosy, 0.034);
-  [-1, 1].forEach((side, idx) => {
-    addFacePart(1 + idx, larioCheek(), [hx + side * 0.118, hy - 0.065, hz - 0.148], LARIO.rosy, 0.042);
-  });
-  addFacePart(3, larioLips(), [hx, hy - 0.132, hz - 0.2], LARIO.lips, 0.036);
+  // Skin features: an invisible grab handle on the face; pulling it drags the skin (LarioSkin)
+  const handleMat = new MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
+  const grips: Array<[number, number]> = [[0, 0.04], [1, 0.045], [2, 0.045], [3, 0.04], [7, 0.032], [8, 0.032], [9, 0.042]];
+  for (const [id, radius] of grips) {
+    const c = faceSkin.home(id);
+    const grip = new Mesh(new SphereGeometry(radius, 12, 8), handleMat);
+    addFacePart(id, grip, [hx + c.x, hy + c.y, hz + c.z - radius * 0.3], LARIO.skin, radius, false);
+    grip.castShadow = false;
+  }
+  // Separate pieces: the beanie and the ears come away on an elastic bridge
   addFacePart(4, larioBeanie(), [hx, hy + 0.105, hz + 0.0], LARIO.beanie, 0.085);
   [-1, 1].forEach((side, idx) => {
     addFacePart(5 + idx, larioEar(side), [hx + side * 0.218, hy - 0.03, hz + 0.01], LARIO.skin, 0.036);
   });
-  [-1, 1].forEach((side, idx) => {
-    addFacePart(7 + idx, larioEyelid(side), [hx + side * 0.075, hy + 0.078, hz - 0.178], LARIO.rosy, 0.028);
-  });
-  addFacePart(9, larioChin(), [hx, hy - 0.196, hz - 0.118], LARIO.skin, 0.044);
 
   const btnEntity = world.createTransformEntity(btnHousing);
   btnEntity.addComponent(RayInteractable);
   btnEntity.addComponent(FaceResetButton);
+
+  // ?dbg=pull shows a stretched pose (nose and one cheek pulled) for screenshots
+  if (new URLSearchParams(location.search).get('dbg')?.includes('pull')) {
+    faceSkin.setPull(0, 0.02, 0.03, -0.22);
+    faceSkin.setPull(2, 0.2, -0.02, -0.05);
+    faceSkin.setPull(8, 0.03, 0.09, -0.03);
+    faceSkin.apply();
+    larioSkin = null;
+  }
 }
 
 /**
@@ -1725,6 +1737,7 @@ export class StretchyFaceSystem extends createSystem({
       );
       const dist = this.disp.length();
       const bridge = btnRoot?.getObjectByName(`stretch-bridge-${partId}`);
+      if (larioSkin?.has(partId)) larioSkin.setPull(partId, this.disp.x, this.disp.y, this.disp.z);
 
       if (dist > 0.003) {
         this.dir.copy(this.disp).divideScalar(dist);
@@ -1763,6 +1776,7 @@ export class StretchyFaceSystem extends createSystem({
         }
       }
     }
+    larioSkin?.apply();
   }
 }
 

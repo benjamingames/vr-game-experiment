@@ -40,9 +40,11 @@ WebGL". The owner has repeatedly rejected results that were merely nice. Specifi
   dense arching tufts, ground has straw/litter and a colour drift. High tier draws roughly 2-3
   million triangles there; frame rate was NOT measured. Low tier keeps big cores, few sprays.
 - RC car has a moulded one-piece shell (`carShell`); the rug has a bound edge.
-- Lario, the stretchy head (`face.ts`): redesigned as an original character (teal beanie, auburn
-  hair, hazel eyes, roll collar). Still a stylised sculpt of separate parts, not photoreal: the
-  cheeks, chin and lids read as attached lumps. Stretching was not exercised after the rebuild.
+- Lario, the stretchy head (`face.ts`): an original character (teal beanie, auburn hair, hazel
+  eyes, roll collar). The face is one sculpted skin mesh; `LarioSkin` drags the skin around seven
+  invisible grab handles (nose, cheeks, lips, lids, chin). Beanie and ears are separate pieces on
+  elastic bridges. `?dbg=pull` shows a stretched pose. Real grabbing was NOT tested: only the
+  debug pose. Mouth does not open; no lower lashes; ears are still simple.
 
 ## Best next steps (objects still below the bar)
 

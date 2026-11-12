@@ -99,7 +99,8 @@ export function skin(color: number): MeshStandardMaterial {
     ? new MeshPhysicalMaterial({ sheen: 0.35, sheenRoughness: 0.45, sheenColor: new Color(0xff9a7a) })
     : new MeshStandardMaterial();
   base.color = new Color(color);
-  return withSet(base, skinCache, 0.28);
+  // The low tier's small texture turns pores into pits, so it keeps almost no relief
+  return withSet(base, skinCache, QUALITY.high ? 0.28 : 0.05);
 }
 
 let metalCache: PBRSet | null = null;
