@@ -17,6 +17,7 @@ import {
   rugSet,
   rubberSet,
   leatherSet,
+  skinSet,
   basketballSet,
   retile,
   tileSet,
@@ -88,6 +89,17 @@ export function basketball(): MeshStandardMaterial {
     : new MeshStandardMaterial();
   base.color = new Color(0xd9661f);
   return withSet(base, bballCache, 1.3);
+}
+
+let skinCache: PBRSet | null = null;
+/** Skin with pores and a soft flush at grazing angles. */
+export function skin(color: number): MeshStandardMaterial {
+  skinCache ??= skinSet();
+  const base = QUALITY.clearcoat
+    ? new MeshPhysicalMaterial({ sheen: 0.35, sheenRoughness: 0.45, sheenColor: new Color(0xff9a7a) })
+    : new MeshStandardMaterial();
+  base.color = new Color(color);
+  return withSet(base, skinCache, 0.28);
 }
 
 let metalCache: PBRSet | null = null;

@@ -40,7 +40,9 @@ WebGL". The owner has repeatedly rejected results that were merely nice. Specifi
   dense arching tufts, ground has straw/litter and a colour drift. High tier draws roughly 2-3
   million triangles there; frame rate was NOT measured. Low tier keeps big cores, few sprays.
 - RC car has a moulded one-piece shell (`carShell`); the rug has a bound edge.
-- Owner's note: the stretchy head ("Lario") was left untouched on purpose; see the chat history.
+- Lario, the stretchy head (`face.ts`): redesigned as an original character (teal beanie, auburn
+  hair, hazel eyes, roll collar). Still a stylised sculpt of separate parts, not photoreal: the
+  cheeks, chin and lids read as attached lumps. Stretching was not exercised after the rebuild.
 
 ## Best next steps (objects still below the bar)
 

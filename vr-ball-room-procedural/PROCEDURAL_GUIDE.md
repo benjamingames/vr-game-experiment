@@ -36,6 +36,7 @@ light bake in a few frames), `info` (state in the page title, read by `tools/dum
 | `furniture.ts` | Modelled furniture: `pillow()` (rounded, stuffed cushion shape), task chair, floor lamp, sofa cushions, desk accessories | Any furniture: build from `pillow`, lathe profiles and mixed materials, never plain boxes |
 | `plants.ts` | Weeping fig grown from a branch skeleton: merged tube mesh for the wood, instanced modelled leaves with a painted vein texture, planter with clay pebbles | Any potted plant (`buildPlant(height, seed, steelPot)`) |
 | `stations.ts` | Modelled bodies for the toy stations: hoop frame and rim mount, turned pedestals, xylophone frame, arcade cabinet and marquee, high-striker scale and bulbs, punch-bag, lane markings; `decal()` for printed graphics, `hollow()` to hide a collider mesh | Dressing a gameplay collider as a real object |
+| `face.ts` | Lario, the stretchy head: shaped skull, eyes, and one mesh per pullable feature | Changing the head; part ids and home positions are in `buildStretchyHead` (room.ts) |
 | `showcase.ts` | The Gallery room, its doors and its system | The reference for building a baked room |
 | `arena.ts` | The outdoor Monke Map | Terrain, trees, rocks, grass |
 

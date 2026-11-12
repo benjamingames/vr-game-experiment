@@ -590,6 +590,30 @@ void surf( vec2 uv, out vec3 c, out float h, out float r, out float m ) {
   );
 }
 
+/** Skin: pores, fine creases, uneven flush and a scatter of freckles (tinted by the material colour). */
+export function skinSet(seed = 77): PBRSet {
+  return buildSet(
+    MID,
+    3,
+    /* glsl */ `
+uniform float uSeed;
+void surf( vec2 uv, out vec3 c, out float h, out float r, out float m ) {
+  float pores = smoothstep( 0.18, 0.05, cells( uv * vec2( 260.0, 130.0 ), vec2( 260.0, 130.0 ), uSeed ) );
+  float fine = fbm( uv * vec2( 160.0, 80.0 ), vec2( 160.0, 80.0 ), 3, uSeed + 2.0 );
+  float blotch = fbm( uv * vec2( 6.0, 3.0 ), vec2( 6.0, 3.0 ), 4, uSeed + 5.0 );
+  vec2 fc = uv * vec2( 60.0, 30.0 );
+  float freckle = smoothstep( 0.1, 0.04, cells( fc, vec2( 60.0, 30.0 ), uSeed + 9.0 ) ) * step( 0.62, ih( floor( fc ), uSeed + 11.0 ) );
+  c = vec3( 0.96, 0.93, 0.91 ) + ( blotch - 0.5 ) * vec3( 0.1, -0.02, -0.04 );
+  c *= 1.0 - pores * 0.1;
+  c = mix( c, vec3( 0.78, 0.58, 0.45 ), freckle * 0.35 );
+  h = fine * 0.5 - pores * 0.9;
+  r = clamp( 0.5 + fine * 0.12 + pores * 0.15 - ( blotch - 0.5 ) * 0.1, 0.1, 1.0 );
+  m = 0.0;
+}`,
+    { uSeed: { value: seed } },
+  );
+}
+
 /** Painted plaster: roller stipple, faint trowel waves and hairline flaws. */
 export function plasterSet(seed = 81): PBRSet {
   return buildSet(
