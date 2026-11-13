@@ -8,8 +8,71 @@ import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 const loader = new GLTFLoader();
 loader.setMeshoptDecoder(MeshoptDecoder);
 
-export const REGIONS = ['head', 'torso', 'armL', 'armR', 'legL', 'legR'];
-export const REGION_LABEL = { head: 'Head', torso: 'Torso', armL: 'Left Arm', armR: 'Right Arm', legL: 'Left Leg', legR: 'Right Leg', cupcake: 'Mr. Cupcake' };
+// R15-style split (like a Roblox R15 avatar): 15 parts per animatronic. A part whose
+// piece of the model is too small to be worth a pickup is merged into its neighbour,
+// so an animatronic can end up with fewer than 15.
+export const REGIONS = ['head', 'torsoU', 'torsoL', 'armLU', 'armLL', 'handL', 'armRU', 'armRL', 'handR', 'legLU', 'legLL', 'footL', 'legRU', 'legRL', 'footR'];
+export const REGION_LABEL = {
+  head: 'Head', torsoU: 'Upper Torso', torsoL: 'Lower Torso',
+  armLU: 'Left Upper Arm', armLL: 'Left Lower Arm', handL: 'Left Hand',
+  armRU: 'Right Upper Arm', armRL: 'Right Lower Arm', handR: 'Right Hand',
+  legLU: 'Left Upper Leg', legLL: 'Left Lower Leg', footL: 'Left Foot',
+  legRU: 'Right Upper Leg', legRL: 'Right Lower Leg', footR: 'Right Foot',
+  cupcake: 'Mr. Cupcake',
+};
+// How the six coarse regions are cut along their long axis (fractions from the top).
+const SPLITS = {
+  torso: { names: ['torsoU', 'torsoL'], cuts: [0.55] },
+  armL: { names: ['armLU', 'armLL', 'handL'], cuts: [0.4, 0.8] },
+  armR: { names: ['armRU', 'armRL', 'handR'], cuts: [0.4, 0.8] },
+  legL: { names: ['legLU', 'legLL', 'footL'], cuts: [0.42, 0.86] },
+  legR: { names: ['legRU', 'legRL', 'footR'], cuts: [0.42, 0.86] },
+};
+// Merge a too-small part into the one above it on the same limb.
+const MERGE_INTO = { torsoL: 'torsoU', armLL: 'armLU', handL: 'armLL', armRL: 'armRU', handR: 'armRL', legLL: 'legLU', footL: 'legLL', legRL: 'legRU', footR: 'legRL' };
+const MERGE_ORDER = ['handL', 'handR', 'footL', 'footR', 'armLL', 'armRL', 'legLL', 'legRL', 'torsoL'];
+
+// Cut each coarse region (head/torso/arms/legs) into R15-style sub-parts along its long axis.
+function subdivideRegions(pieces) {
+  const cent = [];     // { p, t, c }
+  const byRegion = {};
+  for (const p of pieces) {
+    for (let t = 0; t < p.triCount; t++) {
+      const c = new THREE.Vector3();
+      for (let k = 0; k < 3; k++) { const i = p.index ? p.index[t*3+k] : t*3+k; c.x += p.P[i*3]; c.y += p.P[i*3+1]; c.z += p.P[i*3+2]; }
+      c.divideScalar(3);
+      const e = { p, t, c }; (byRegion[p.triRegion[t]] ||= []).push(e);
+    }
+  }
+  for (const base in SPLITS) {
+    const list = byRegion[base]; if (!list || list.length < 4) continue;
+    const { names, cuts } = SPLITS[base];
+    const sorted = list.slice().sort((a, b) => b.c.y - a.c.y);
+    const n = Math.max(1, Math.floor(sorted.length * 0.12));
+    const top = new THREE.Vector3(), bot = new THREE.Vector3();
+    for (let i = 0; i < n; i++) { top.add(sorted[i].c); bot.add(sorted[sorted.length - 1 - i].c); }
+    top.divideScalar(n); bot.divideScalar(n);
+    const axis = bot.clone().sub(top); const len = axis.length();
+    if (len < 1e-4) { for (const e of list) e.p.triRegion[e.t] = names[0]; continue; }
+    axis.divideScalar(len);
+    // use the real extent of the projection so the cuts land on the limb itself
+    let lo = Infinity, hi = -Infinity;
+    const proj = list.map(e => e.c.clone().sub(top).dot(axis));
+    for (const v of proj) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+    list.forEach((e, i) => {
+      const f = (proj[i] - lo) / Math.max(1e-6, hi - lo);
+      let k = 0; while (k < cuts.length && f >= cuts[k]) k++;
+      e.p.triRegion[e.t] = names[k];
+    });
+  }
+  // merge tiny sub-parts into their neighbour
+  let total = 0; for (const p of pieces) total += p.triCount;
+  const minTris = Math.max(40, total * 0.006);
+  for (const name of MERGE_ORDER) {
+    let count = 0; for (const p of pieces) for (let t = 0; t < p.triCount; t++) if (p.triRegion[t] === name) count++;
+    if (count > 0 && count < minTris) for (const p of pieces) for (let t = 0; t < p.triCount; t++) if (p.triRegion[t] === name) p.triRegion[t] = MERGE_INTO[name];
+  }
+}
 
 // Character definitions. rot: extra Y rotation (radians) so the model faces +Z.
 // height: final standing height in metres.
@@ -193,6 +256,8 @@ export async function loadAnimatronic(def) {
       for (const t of c.tris) p.triRegion[t] = r;
     }
   }
+
+  subdivideRegions(pieces);
 
   // Build part groups.
   const parts = {};

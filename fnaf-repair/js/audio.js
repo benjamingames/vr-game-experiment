@@ -37,6 +37,10 @@ export const sfx = {
     notes.forEach((f, i) => { tone(f, 0.35, 'triangle', 0.18, i * 0.13); tone(f * 2, 0.25, 'sine', 0.05, i * 0.13); });
   },
   roundUp() { [392, 523, 659, 784, 1046, 1318].forEach((f, i) => tone(f, 0.4, 'square', 0.08, i * 0.1)); },
+  horn() { // short double car horn
+    tone(392, 0.32, 'sawtooth', 0.09); tone(494, 0.32, 'sawtooth', 0.09); tone(392, 0.4, 'sawtooth', 0.09, 0.4); tone(494, 0.4, 'sawtooth', 0.09, 0.4);
+  },
+  thud() { noise(0.25, 0.55, 0, 220, 0.7); tone(70, 0.35, 'sine', 0.5, 0, 0.4); noise(0.18, 0.25, 0.02, 1800, 1); },
   step() { noise(0.05, 0.05, 0, 400 + Math.random() * 200, 1.5); },
   // continuous tool sound while assembling (style 0 screwdriver .. 4 robot)
   toolStart(style) {

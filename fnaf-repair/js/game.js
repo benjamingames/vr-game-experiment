@@ -6,6 +6,8 @@ import { ANIMATRONICS, loadAnimatronic, loadCupcake, REGION_LABEL } from './anim
 import { sfx, initAudio } from './audio.js';
 import * as T from './textures.js';
 import { makeTool, makeHand } from './props.js';
+import { createCars } from './cars.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 const Q = new URLSearchParams(location.search);
 const isQuest = /OculusBrowser|Quest|Pacific/i.test(navigator.userAgent);
@@ -21,7 +23,7 @@ const TOOLS = [
   { name: 'Power Drill', time: 1.1, cost: 40 }, { name: 'Impact Driver', time: 0.55, cost: 110 },
   { name: 'Robo-Arm', time: 0.12, cost: 300 },
 ];
-const BAG = [{ n: 2, cost: 0 }, { n: 3, cost: 10 }, { n: 4, cost: 30 }, { n: 6, cost: 75 }, { n: 8, cost: 160 }];
+const BAG = [{ n: 3, cost: 0 }, { n: 5, cost: 10 }, { n: 8, cost: 30 }, { n: 12, cost: 75 }, { n: 18, cost: 160 }];
 const SHOES = [{ s: 2.6, cost: 0 }, { s: 3.2, cost: 6 }, { s: 3.9, cost: 20 }, { s: 4.7, cost: 50 }, { s: 5.6, cost: 120 }];
 const UPGRADES = [
   { key: 'value', title: 'Part Value', levels: VALUE, show: l => `$${l.v} per part` },
@@ -30,10 +32,16 @@ const UPGRADES = [
   { key: 'shoes', title: 'Sneakers', levels: SHOES, show: l => `${l.s} m/s` },
 ];
 
-const SAVE_KEY = 'fnaf-repair-save-v1';
-const fresh = () => ({ money: 0, round: 1, up: { value: 0, tool: 0, bag: 0, shoes: 0 }, installed: [], bag: [], earned: 0 });
+const SAVE_KEY = 'fnaf-repair-save-v1'; // v2 saves carry ver:2 (R15 parts)
+const fresh = () => ({ ver: 2, money: 0, round: 1, up: { value: 0, tool: 0, bag: 0, shoes: 0 }, installed: [], bag: [], earned: 0 });
 let state = fresh();
-try { const s = JSON.parse(localStorage.getItem(SAVE_KEY)); if (s && s.up) state = Object.assign(fresh(), s); } catch {}
+let oldSave = false;
+try { const s = JSON.parse(localStorage.getItem(SAVE_KEY)); if (s && s.up) { oldSave = s.ver !== 2; state = Object.assign(fresh(), s); } } catch {}
+if (oldSave) { // old 6-part saves: expand installed parts into their R15 pieces, drop the bag
+  const OLD = { torso: ['torsoU', 'torsoL'], armL: ['armLU', 'armLL', 'handL'], armR: ['armRU', 'armRL', 'handR'], legL: ['legLU', 'legLL', 'footL'], legR: ['legRU', 'legRL', 'footR'] };
+  state.installed = state.installed.flatMap(id => { const [o, r] = id.split(':'); return OLD[r] ? OLD[r].map(n => o + ':' + n) : [id]; });
+  state.bag = []; state.ver = 2;
+}
 if (Q.has('reset')) state = fresh();
 if (Q.has('money')) state.money = +Q.get('money');
 const save = () => { try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); } catch {} };
@@ -102,8 +110,16 @@ const ghostMat = holo(0x3fb6ff, 0.6);
 const ghostReady = holo(0xffa630, 1.2);
 
 function makeGhost(group) {
-  const g = new THREE.Group();
-  group.traverse(o => { if (o.isMesh) { const m = new THREE.Mesh(o.geometry, ghostMat); m.position.copy(o.position); m.renderOrder = 2; g.add(m); } });
+  // merge all of the part's meshes into one compact geometry: one draw call per hologram
+  const g = new THREE.Group(), list = [];
+  group.traverse(o => {
+    if (!o.isMesh) return;
+    const src = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', src.attributes.position); geo.setAttribute('normal', src.attributes.normal);
+    geo.translate(o.position.x, o.position.y, o.position.z); list.push(geo);
+  });
+  if (list.length) { const m = new THREE.Mesh(mergeGeometries(list), ghostMat); m.renderOrder = 2; g.add(m); }
   return g;
 }
 
@@ -124,7 +140,7 @@ for (let i = 0; i < ANIMATRONICS.length; i++) {
   if (def.id === 'chica') {
     setStatus('Loading Mr. Cupcake...');
     const c = await loadCupcake(0.3);
-    const arm = a.parts.find(p => p.region === 'armL');
+    const arm = a.parts.find(p => p.region === 'handL') || a.parts.find(p => p.region === 'armLL') || a.parts.find(p => p.region === 'armLU');
     const slot = arm.tip.clone().add(new THREE.Vector3(-0.01, 0.17, 0.07));
     c.group.traverse(o => { if (o.isMesh) { o.castShadow = true; } });
     const part = { id: 'chica:cupcake', owner: 'chica', region: 'cupcake', label: REGION_LABEL.cupcake, group: c.group, slot, size: c.size, localBox: c.localBox,
@@ -587,7 +603,34 @@ if (Q.has('look')) { const [a, b] = Q.get('look').split(',').map(Number); yaw = 
 rig.position.copy(player.pos);
 let snapReady = true;
 
+// ---------------- traffic: cars on the street knock you back toward the garage ----------------
+const cars = createCars(scene, { sfx });
+let knock = null, knockCool = 0;
+const hitFlash = new THREE.Mesh(new THREE.PlaneGeometry(3, 3), new THREE.MeshBasicMaterial({ color: 0xc01010, transparent: true, opacity: 0, depthTest: false, depthWrite: false, toneMapped: false }));
+hitFlash.position.set(0, 0, -0.25); hitFlash.renderOrder = 99; hitFlash.frustumCulled = false; hitFlash.visible = false; camera.add(hitFlash);
+function headPos() { return renderer.xr.isPresenting ? camera.getWorldPosition(new THREE.Vector3()) : rig.position.clone(); }
+function getHit(h) {
+  if (installing) cancelInstall();
+  const p = headPos();
+  // away from the pizzeria = toward -z; also carried a little along the car's direction
+  knock = { t: 0, dur: 0.55, fx: p.x, fz: p.z, tx: p.x + h.dir * Math.min(4, h.speed * 0.3), tz: Math.min(p.z - 5.5, L.street.z0 - 2.5) };
+  knockCool = 2.5; sfx.thud(); setTimeout(() => sfx.horn(), 150);
+  for (const c of controllers) pulse(c, 1, 250);
+  toast('WHAM! A car hit you and knocked you back. Watch the traffic!', 3);
+}
+
 function movePlayer(dt) {
+  if (knock) {
+    const head = headPos();
+    knock.t += dt; const k = Math.min(1, knock.t / knock.dur), e = 1 - Math.pow(1 - k, 3);
+    const [nx, nz] = collide(world.colliders, knock.fx + (knock.tx - knock.fx) * e, knock.fz + (knock.tz - knock.fz) * e);
+    rig.position.x += nx - head.x; rig.position.z += nz - head.z;
+    rig.position.y += (world.floorY(nx, nz) - rig.position.y) * Math.min(1, dt * 12);
+    if (!renderer.xr.isPresenting) { rig.rotation.y = yaw; camera.rotation.set(pitch + 0.2 * Math.sin(k * Math.PI), 0, 0.12 * Math.sin(k * Math.PI * 2)); }
+    hitFlash.visible = true; hitFlash.material.opacity = 0.65 * (1 - k);
+    if (k >= 1) { knock = null; hitFlash.visible = false; camera.rotation.z = 0; }
+    return;
+  }
   const speed = SHOES[state.up.shoes].s;
   let mx = 0, mz = 0, fwdYaw = yaw;
   if (renderer.xr.isPresenting) {
@@ -668,6 +711,8 @@ function frame() {
   const dt = Math.min(0.05, clock.getDelta()); t += dt;
   movePlayer(dt);
   world.update(t);
+  knockCool = Math.max(0, knockCool - dt);
+  { const hp0 = headPos(); const h = cars.update(dt, hp0.x, hp0.z); if (h && !knock && knockCool <= 0) getHit(h); }
 
   // targeting
   let promptText = '';
@@ -759,6 +804,6 @@ if (Q.has('autoplay')) { ui.menu.hidden = true; ui.hud.hidden = false; playing =
 renderer.setAnimationLoop(frame);
 
 // test hooks
-window.game = { state, parts, stands, buy, applyState, pickUp, actionStart, actionEnd, get aim() { return deskAim; }, get installing() { return installing; },
+window.game = { state, parts, stands, cars, get pos() { return rig.position; }, get knock() { return knock; }, hit(dir = 1, speed = 12) { getHit({ dir, speed }); }, buy, applyState, pickUp, actionStart, actionEnd, get aim() { return deskAim; }, get installing() { return installing; },
   info() { return { ...renderer.info.render, geos: renderer.info.memory.geometries, tex: renderer.info.memory.textures, progs: renderer.info.programs.length }; },
   view(x, z, a, b) { rig.position.set(x, world.floorY(x, z), z); yaw = a; pitch = b; }, finishAll() { for (const p of parts) if (p.state !== 'installed') { state.bag = [p.id]; p.state = 'bag'; installing = { part: p, st: stands[p.standId], ctl: null, t: 1, from: p.slot.clone() }; stands[p.standId].group.add(p.group); finishInstall(); } } };
