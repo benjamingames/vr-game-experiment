@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Animatronic Repair Shop</title>
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;600;700&family=Barlow+Condensed:wght@500;600;700&display=swap">
+<style>
+:root{ --ink:#0b0d10; --panel:rgba(12,14,18,.82); --amber:#ffb347; --bone:#f2efe6; --dim:#9fb0c2; --green:#5be37d; color-scheme:dark; }
+html,body{margin:0;height:100%;overflow:hidden;background:#000;color:var(--bone);font-family:Barlow,system-ui,sans-serif}
+#stage{position:fixed;inset:0} #stage canvas{display:block;width:100%;height:100%}
+#menu{position:fixed;inset:0;display:flex;align-items:center;padding:24px max(24px,6vw);
+  background:radial-gradient(ellipse at 75% 50%,rgba(0,0,0,.15),rgba(0,0,0,.88) 65%),linear-gradient(90deg,rgba(5,5,8,.92),rgba(5,5,8,.4));overflow:auto}
+#menu[hidden]{display:none}
+.card{max-width:560px;display:flex;flex-direction:column;gap:18px}
+.eyebrow{font-family:'Barlow Condensed',sans-serif;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--amber);font-size:15px}
+h1{font-family:'Barlow Condensed',Impact,sans-serif;font-weight:700;font-size:clamp(44px,7vw,78px);line-height:.92;margin:0;text-transform:uppercase}
+h1 span{color:var(--amber)}
+p{margin:0;line-height:1.5;color:#d8d4ca;font-size:17px}
+.actions{display:flex;gap:12px;flex-wrap:wrap}
+.btn{border:0;border-radius:6px;padding:14px 24px;font:700 21px 'Barlow Condensed',sans-serif;letter-spacing:.05em;text-transform:uppercase;cursor:pointer}
+.btn.primary{background:var(--amber);color:#1a1206} .btn.primary:hover{background:#ffd27a}
+.btn.ghost{background:transparent;color:var(--bone);box-shadow:inset 0 0 0 2px #4a4f58} .btn.ghost:hover{box-shadow:inset 0 0 0 2px var(--amber)}
+.btn:disabled{opacity:.4;cursor:default}
+#vrNote,#loadStatus{font-size:15px;color:var(--dim)} #vrNote b{color:var(--bone)}
+.how{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:15px;color:#c9c4b8;margin:0}
+.how dt{font-family:'Barlow Condensed',sans-serif;font-weight:700;color:var(--amber);text-transform:uppercase;letter-spacing:.06em}
+.how dd{margin:0}
+.small{font-size:13px;color:#7d8590}
+#hud[hidden]{display:none}
+#hudTop{position:fixed;left:16px;top:14px;background:var(--panel);border-radius:10px;padding:10px 16px;min-width:200px}
+#hMoney{font:700 40px 'Barlow Condensed',sans-serif;color:var(--green);line-height:1}
+#hTool{font:600 16px 'Barlow Condensed',sans-serif;color:var(--amber);letter-spacing:.06em;text-transform:uppercase;margin-top:4px}
+#hBag{margin-top:8px;display:flex;flex-direction:column;gap:2px;font-size:14px;color:#d8d4ca} #hBag b{color:var(--bone)} #hBag .dim{color:#7d8590}
+#cross{position:fixed;left:50%;top:50%;width:8px;height:8px;margin:-4px 0 0 -4px;border-radius:50%;background:rgba(255,255,255,.75);box-shadow:0 0 0 2px rgba(0,0,0,.35);display:none}
+#cross.hot{background:var(--amber);width:12px;height:12px;margin:-6px 0 0 -6px}
+#prompt{position:fixed;left:50%;top:calc(50% + 34px);transform:translateX(-50%);font:600 19px Barlow,sans-serif;text-shadow:0 2px 6px #000;white-space:nowrap}
+#bar{position:fixed;left:50%;top:calc(50% + 70px);transform:translateX(-50%);width:220px;height:10px;border-radius:5px;background:rgba(0,0,0,.6);overflow:hidden}
+#bar[hidden]{display:none} #barFill{height:100%;background:var(--amber);width:0}
+#toast{position:fixed;left:50%;bottom:36px;transform:translate(-50%,20px);background:var(--panel);padding:12px 20px;border-radius:10px;font-size:17px;opacity:0;transition:.25s;max-width:min(720px,90vw);text-align:center;pointer-events:none}
+#toast.on{opacity:1;transform:translate(-50%,0)}
+#clickHint{position:fixed;left:50%;top:45%;transform:translate(-50%,-50%);background:var(--panel);padding:14px 22px;border-radius:10px;font:600 20px 'Barlow Condensed',sans-serif;letter-spacing:.05em;text-transform:uppercase;display:none;pointer-events:none}
+#keys{position:fixed;right:16px;bottom:14px;font-size:13px;color:#aab;background:var(--panel);padding:8px 12px;border-radius:8px;line-height:1.5}
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="hud" hidden>
+  <div id="hudTop"><div id="hMoney">$0</div><div id="hTool">Screwdriver</div><div id="hBag"></div></div>
+  <div id="cross"></div><div id="prompt"></div><div id="bar" hidden><div id="barFill"></div></div>
+  <div id="toast"></div>
+  <div id="clickHint">Click to look around</div>
+  <div id="keys">WASD move • Shift run • Mouse look<br>Click / E pick up • Hold click / E on a stand to install</div>
+</div>
+<div id="menu">
+  <div class="card">
+    <div class="eyebrow">A VR repair game</div>
+    <h1>Animatronic<br><span>Repair Shop</span></h1>
+    <p>All the animatronics at Freddy's broke down. Cross the street, climb onto the show stage and grab their broken parts off the floor, then bring them back to your garage and put them back together.</p>
+    <dl class="how">
+      <dt>Collect</dt><dd>Parts are scattered on the stage. Your bag holds 2 at first.</dd>
+      <dt>Repair</dt><dd>Aim at a repair stand and hold to install. Every part earns $1.</dd>
+      <dt>Upgrade</dt><dd>Use the shop screen in the garage: more money per part, faster tools, a bigger bag, faster sneakers.</dd>
+      <dt>Chica</dt><dd>Don't forget Mr. Cupcake: he goes on her left hand.</dd>
+    </dl>
+    <div class="actions">
+      <button class="btn primary" id="vrBtn" disabled>Enter VR</button>
+      <button class="btn ghost" id="playBtn" disabled>Play on PC</button>
+    </div>
+    <p id="vrNote"></p>
+    <p id="loadStatus">Loading...</p>
+    <p class="small">Progress saves automatically. <a href="#" id="resetBtn" style="color:#7d8590">Reset save</a> • <a href="../" style="color:#7d8590">All games</a></p>
+  </div>
+</div>
+<script type="importmap">{"imports":{"three":"./lib/three.module.js","three/addons/":"./lib/addons/"}}</script>
+<script type="module" src="./js/game.js"></script>
+</body>
+</html>
