@@ -1,8 +1,9 @@
-// Boss Arena: main (renderer, VR + desktop input, player avatar "Rook", character showcase, UI).
+// Boss Arena: main (renderer, VR + desktop input, the Minecraft player, bosses, UI).
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { buildArena } from './arena.js';
-import { Hero, makeGlove } from './character.js';
+import { Steve, makeBlockHand, loadGLB } from './steve.js';
+import { Boss } from './boss.js';
 import { sfx, initAudio } from './audio.js';
 import * as T from './textures.js';
 
@@ -38,53 +39,30 @@ addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; cam
 
 // ---------------- world + characters ----------------
 const arena = buildArena(scene, { quality });
-const showcaseOn = Q.get('showcase') !== '0';
-arena.pad.on = showcaseOn;
 
-const hero = new Hero(); scene.add(hero.root);
+// ---------------- models (the player + the two bosses) ----------------
+ui.status.textContent = 'Loading characters...';
+const prog = {}; const upd = k => e => { if (e.total) { prog[k] = e.loaded / e.total; ui.status.textContent = 'Loading characters... ' + Math.round(Object.values(prog).reduce((x, y) => x + y, 0) / 2 * 100) + '%'; } };
+const [springG, demoG] = await Promise.all([
+  loadGLB('./models/springtrap.glb', upd('b')), loadGLB('./models/demogorgon.glb', upd('c')),
+]);
+const hero = new Steve({ height: 1.8, yawOffset: +(Q.get('steveyaw') ?? 0) }); scene.add(hero.root);
 
-// character showcase: Rook demoing every animation on a little pad
-const show = new Hero(); scene.add(show.root);
-const showPad = new THREE.Group(); scene.add(showPad);
-{
-  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 1.05, 0.12, 40), new THREE.MeshStandardMaterial({ color: 0x20242b, metalness: 0.85, roughness: 0.4 }));
-  base.position.y = 0.06; showPad.add(base);
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.92, 0.025, 8, 48), arena.glowMats.cyan); ring.rotation.x = Math.PI / 2; ring.position.y = 0.125; showPad.add(ring);
-}
-const showPos = { x: arena.pad.x, z: arena.pad.z };
-showPad.position.set(showPos.x, 0, showPos.z);
-show.root.position.set(showPos.x, 0.12, showPos.z);
-const labelMat = new THREE.MeshBasicMaterial({ map: T.labelTex('ROOK'), transparent: true, toneMapped: false, depthWrite: false });
-const label = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 0.425), labelMat); label.position.set(showPos.x, 2.3, showPos.z); scene.add(label);
-showPad.visible = show.root.visible = label.visible = showcaseOn;
-const SEQ = [
-  { n: 'ROOK  -  IDLE GUARD', d: 2.6, sp: 0 },
-  { n: 'WALK', d: 2.6, sp: 1.9 },
-  { n: 'RUN', d: 2.6, sp: 4.8 },
-  { n: 'JAB', d: 2.8, sp: 0, acts: [[0.2, 'punch'], [0.95, 'punch'], [1.7, 'punch']] },
-  { n: 'BLOCK', d: 2.2, sp: 0, hold: 'block' },
-  { n: 'WAVE', d: 2.3, sp: 0, acts: [[0.1, 'wave']] },
-  { n: 'FLEX', d: 2.3, sp: 0, acts: [[0.1, 'taunt']] },
-  { n: 'OUCH', d: 1.8, sp: 0, acts: [[0.2, 'hurt'], [1.1, 'hurt']] },
-  { n: 'CHEER', d: 2.4, sp: 0, acts: [[0.1, 'cheer']] },
+// bosses wait on two of the red spawn pads, facing the middle
+const spots = arena.bossSpots;
+const bosses = [
+  new Boss(springG, { name: 'SPRINGTRAP', height: 2.3, yawOffset: +(Q.get('springyaw') ?? 0), speed: 2.3, reach: 2.4, idle: 'idle', walk: 'walk', run: 'run', runDist: 8, attack: ['swing', 'bow', 'miss'], home: spots[4] }),
+  new Boss(demoG, { name: 'THE DEMOGORGON', height: 2.1, yawOffset: +(Q.get('demoyaw') ?? 0), speed: 2.6, reach: 2.2, idle: 'idle', walk: 'walkHuntRT', attack: ['swing', 'miss'], home: spots[0] }),
 ];
-let seqI = -1, seqT = 0, seqActs = [];
-function nextSeq() {
-  seqI = (seqI + 1) % SEQ.length; seqT = 0; const s = SEQ[seqI];
-  seqActs = (s.acts || []).map(a => ({ t: a[0], a: a[1], done: false }));
-  show.setHold(s.hold || null);
-  labelMat.map.dispose(); labelMat.map = T.labelTex(s.n); labelMat.needsUpdate = true;
+for (const b of bosses) { scene.add(b.root, b.label); }
+arena.pad.on = false;
+let hunting = false;
+function toggleHunt() {
+  hunting = !hunting; for (const b of bosses) b.setHunting(hunting);
+  toast(hunting ? 'The bosses are hunting you! (B to call them off)' : 'The bosses head back to their pads.', 3);
+  if (hunting) sfx.cheer();
 }
-function updateShowcase(dt) {
-  if (!showcaseOn) return;
-  if (seqI < 0) nextSeq();
-  seqT += dt; const s = SEQ[seqI];
-  for (const a of seqActs) if (!a.done && seqT >= a.t) { a.done = true; show.play(a.a); }
-  if (seqT >= s.d) nextSeq();
-  show.update(dt, s.sp);
-  const cx = camera.getWorldPosition(_v).x - showPos.x, cz = _v.z - showPos.z;
-  label.rotation.y = Math.atan2(cx, cz);
-}
+
 const _v = new THREE.Vector3(), _q = new THREE.Quaternion();
 
 // controls board standing near the start
@@ -94,7 +72,7 @@ const _v = new THREE.Vector3(), _q = new THREE.Quaternion();
   g.strokeStyle = '#ff7a1a'; g.lineWidth = 6; g.strokeRect(8, 8, 624, 344);
   g.fillStyle = '#ffd27a'; g.font = '700 46px "Arial Black", sans-serif'; g.textAlign = 'center'; g.fillText('CONTROLS', 320, 66);
   g.font = '600 29px system-ui, sans-serif'; g.textAlign = 'left'; g.fillStyle = '#e8eef5';
-  ['VR:  left stick move  |  right stick turn', 'VR:  swing the gloves to punch  |  A = gates', 'PC:  WASD move  |  Shift run  |  mouse look', 'PC:  click / F punch  |  right-click block', 'PC:  E wave   T flex   H ouch   C cheer', 'PC:  V first / third person   G = gates']
+  ['VR:  left stick move  |  right stick turn', 'VR:  swing your fists  |  A = gates  |  B = hunt', 'PC:  WASD move  |  Shift run  |  mouse look', 'PC:  click / F punch  |  right-click block', 'PC:  E wave  T flex  H ouch  C cheer', 'PC:  V first / third person  G gates  B hunt']
     .forEach((l, i) => g.fillText(l, 36, 124 + i * 40));
   const board = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 1.35), new THREE.MeshBasicMaterial({ map: T.tex(c), toneMapped: false }));
   board.position.set(3.6, 1.55, 9.2); board.rotation.y = -0.25; scene.add(board);
@@ -117,7 +95,7 @@ for (let i = 0; i < 2; i++) {
   const ctl = { i, c, grip, gamepad: null, side: null, glove: null, prev: new THREE.Vector3(), cool: 0, aPrev: false };
   c.addEventListener('connected', e => {
     ctl.gamepad = e.data.gamepad; ctl.side = e.data.handedness;
-    if (!ctl.glove) { ctl.glove = makeGlove(); ctl.glove.rotation.x = Math.PI / 2; if (ctl.side === 'left') ctl.glove.scale.x = -1; grip.add(ctl.glove); }
+    if (!ctl.glove) { ctl.glove = makeBlockHand(); grip.add(ctl.glove); }
   });
   c.addEventListener('disconnected', () => { ctl.gamepad = null; });
   controllers.push(ctl);
@@ -133,6 +111,7 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyH') { hero.play('hurt'); sfx.thud(); }
   if (e.code === 'KeyC') { hero.play('cheer'); sfx.cheer(); }
   if (e.code === 'KeyG') toggleGates();
+  if (e.code === 'KeyB') toggleHunt();
   if (e.code === 'KeyV') { P.third = !P.third; toast(P.third ? 'Third person' : 'First person'); }
 });
 addEventListener('keyup', e => { keys[e.code] = false; });
@@ -169,6 +148,7 @@ function stepPlayer(dt) {
         if (Math.abs(ax) > 0.7 && snapReady) { snapTurn(ax > 0 ? -Math.PI / 6 : Math.PI / 6); snapReady = false; }
         if (Math.abs(ax) < 0.3) snapReady = true;
         const a = !!gp.buttons[4]?.pressed; if (a && !ctl.aPrev) toggleGates(); ctl.aPrev = a;
+        const bb = !!gp.buttons[5]?.pressed; if (bb && !ctl.bPrev) toggleHunt(); ctl.bPrev = bb;
       }
     }
     camera.getWorldPosition(_v); headX = _v.x; headZ = _v.z; headY = _v.y;
@@ -247,14 +227,19 @@ renderer.xr.addEventListener('sessionend', () => {
 // ---------------- main loop ----------------
 const clock = new THREE.Clock(); let t = 0;
 const dbg = { paused: false };
+function tick(dt) {
+  stepPlayer(dt); arena.update(t, dt); hero.update(dt, spdS);
+  const tp = { x: lastX, z: lastZ }; camera.getWorldPosition(_v);
+  for (const b of bosses) { b.update(dt, tp, arena); b.label.rotation.y = Math.atan2(_v.x - b.root.position.x, _v.z - b.root.position.z); }
+}
 renderer.setAnimationLoop(() => {
   const dt = Math.min(0.05, clock.getDelta()); t += dt;
-  if (!dbg.paused) { stepPlayer(dt); arena.update(t, dt); hero.update(dt, spdS); updateShowcase(dt); }
+  if (!dbg.paused) tick(dt);
   renderer.render(scene, camera);
 });
 
 // ---------------- menu ----------------
-ui.status.textContent = 'Ready.';
+ui.status.textContent = 'Ready. Character models by their Sketchfab authors (see credits below).';
 ui.play.disabled = false;
 ui.play.onclick = () => {
   initAudio(); ui.menu.hidden = true; ui.hud.hidden = false; playing = true; renderer.domElement.requestPointerLock();
@@ -266,7 +251,7 @@ if (navigator.xr && await navigator.xr.isSessionSupported('immersive-vr').catch(
 if (Q.has('autoplay')) { ui.menu.hidden = true; ui.hud.hidden = false; playing = true; }
 
 // test hooks
-window.boss = { arena, hero, show, P, scene, camera, renderer, toggleGates, punch, dbg,
+window.boss = { arena, hero, bosses, toggleHunt, P, scene, camera, renderer, toggleGates, punch, dbg,
   // debug: advance the simulation by `sec` seconds in 1/60 steps (used with dbg.paused for screenshots)
-  step(sec, heroSpeed = 0) { for (let i = 0; i < sec * 60; i++) { t += 1 / 60; stepPlayer(1 / 60); arena.update(t, 1 / 60); hero.update(1 / 60, heroSpeed); updateShowcase(1 / 60); } },
+  step(sec) { for (let i = 0; i < sec * 60; i++) { t += 1 / 60; tick(1 / 60); } },
   info() { return { ...renderer.info.render, geos: renderer.info.memory.geometries, tex: renderer.info.memory.textures, balls: arena.ballCount }; } };
