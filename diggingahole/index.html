@@ -3937,16 +3937,53 @@ camera.add(lamp);camera.add(lamp.target);lamp.target.position.set(0,-0.3,-1);
 /* ================= TEXTURES ================= */
 function canvasTex(w,h,draw){const c=document.createElement('canvas');c.width=w;c.height=h;draw(c.getContext('2d'),w,h);const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.encoding=THREE.sRGBEncoding;t.anisotropy=renderer.capabilities.getMaxAnisotropy();return t;}
 const rnd=(a,b)=>a+Math.random()*(b-a);
+/* seamless procedural PBR-ish textures: colour map + normal map built from a height field */
+const _h=(x,y,s)=>{let h=(Math.imul(x,374761393)+Math.imul(y,668265263)+Math.imul(s,2147483647))|0;h=Math.imul(h^(h>>>13),1274126177);return((h^(h>>>16))>>>0)/4294967296;};
+function pnoise(u,v,px,py,s){const x=u*px,y=v*py,i=Math.floor(x),j=Math.floor(y),fx=x-i,fy=y-j,sx=fx*fx*(3-2*fx),sy=fy*fy*(3-2*fy);
+  const i0=((i%px)+px)%px,i1=(i0+1)%px,j0=((j%py)+py)%py,j1=(j0+1)%py,a=_h(i0,j0,s),b=_h(i1,j0,s),c=_h(i0,j1,s),d=_h(i1,j1,s);
+  return a+(b-a)*sx+(c-a)*sy+(a-b-c+d)*sx*sy;}
+function pfbm(u,v,px,py,s,o){let t=0,a=.5,n=0;for(let k=0;k<o;k++){t+=a*pnoise(u,v,px<<k,py<<k,s+k*13);n+=a;a*=.5;}return t/n;}
+const mix3=(a,b,t)=>[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,a[2]+(b[2]-a[2])*t];
+const hex3=h=>{const n=parseInt(h.slice(1),16);return[n>>16&255,n>>8&255,n&255];};
+function pbrTex(N,fn,bump){
+  const c=document.createElement('canvas');c.width=c.height=N;const g=c.getContext('2d'),img=g.createImageData(N,N),H=new Float32Array(N*N);
+  for(let y=0;y<N;y++)for(let x=0;x<N;x++){const o=fn(x/N,y/N,x,y),k=(y*N+x)*4;img.data[k]=o[0];img.data[k+1]=o[1];img.data[k+2]=o[2];img.data[k+3]=255;H[y*N+x]=o[3];}
+  g.putImageData(img,0,0);
+  const nc=document.createElement('canvas');nc.width=nc.height=N;const ng=nc.getContext('2d'),ni=ng.createImageData(N,N),sc=(bump||3)*N/64;
+  for(let y=0;y<N;y++)for(let x=0;x<N;x++){const xl=(x+N-1)%N,xr=(x+1)%N,yu=(y+N-1)%N,yd=(y+1)%N;
+    const dx=(H[y*N+xr]-H[y*N+xl])*sc,dy=(H[yd*N+x]-H[yu*N+x])*sc,l=Math.hypot(dx,dy,1),k=(y*N+x)*4;
+    ni.data[k]=(-dx/l*.5+.5)*255;ni.data[k+1]=(dy/l*.5+.5)*255;ni.data[k+2]=(1/l*.5+.5)*255;ni.data[k+3]=255;}
+  ng.putImageData(ni,0,0);
+  const mk=(cv,srgb)=>{const t=new THREE.CanvasTexture(cv);t.wrapS=t.wrapT=THREE.RepeatWrapping;if(srgb)t.encoding=THREE.sRGBEncoding;t.anisotropy=Math.min(8,renderer.capabilities.getMaxAnisotropy());return t;};
+  const t=mk(c,true);t.nrm=mk(nc,false);return t;}
 const TEX={
-  wood:canvasTex(256,256,(c,w,h)=>{c.fillStyle='#8a6440';c.fillRect(0,0,w,h);for(let i=0;i<260;i++){c.strokeStyle=`rgba(${Math.random()<.5?'40,24,10':'190,150,105'},${rnd(.05,.22)})`;c.lineWidth=rnd(.5,2.5);const x=rnd(0,w);c.beginPath();c.moveTo(x,0);c.bezierCurveTo(x+rnd(-8,8),h*.3,x+rnd(-8,8),h*.6,x+rnd(-4,4),h);c.stroke();}for(let k=0;k<3;k++){c.fillStyle='rgba(60,35,15,.5)';c.beginPath();c.ellipse(rnd(20,w-20),rnd(20,h-20),rnd(3,7),rnd(6,12),0,0,7);c.fill();}}),
-  siding:(base)=>canvasTex(256,256,(c,w,h)=>{c.fillStyle=base;c.fillRect(0,0,w,h);for(let i=0;i<4000;i++){c.fillStyle=`rgba(${Math.random()<.5?0:255},${Math.random()<.5?0:255},${Math.random()<.5?0:255},.03)`;c.fillRect(rnd(0,w),rnd(0,h),2,1);}for(let y=0;y<h;y+=32){const g=c.createLinearGradient(0,y,0,y+32);g.addColorStop(0,'rgba(0,0,0,.28)');g.addColorStop(.12,'rgba(0,0,0,0)');g.addColorStop(.9,'rgba(255,255,255,.06)');g.addColorStop(1,'rgba(0,0,0,.1)');c.fillStyle=g;c.fillRect(0,y,w,32);}}),
-  concrete:canvasTex(256,256,(c,w,h)=>{c.fillStyle='#9d9a93';c.fillRect(0,0,w,h);for(let i=0;i<9000;i++){const v=Math.random()<.5?0:255;c.fillStyle=`rgba(${v},${v},${v},${rnd(.02,.08)})`;c.fillRect(rnd(0,w),rnd(0,h),rnd(1,3),rnd(1,3));}c.strokeStyle='rgba(60,58,55,.35)';c.lineWidth=2;c.strokeRect(0,0,w,h);}),
-  shingle:canvasTex(256,256,(c,w,h)=>{c.fillStyle='#3b3a3c';c.fillRect(0,0,w,h);for(let y=0;y<h;y+=24){const off=(y/24)%2?16:0;for(let x=-32;x<w;x+=32){const v=rnd(40,72)|0;c.fillStyle=`rgb(${v},${v-2},${v+2})`;c.fillRect(x+off+1,y+1,30,22);}c.fillStyle='rgba(0,0,0,.45)';c.fillRect(0,y+21,w,3);}}),
-  pegboard:canvasTex(256,256,(c,w,h)=>{c.fillStyle='#b68e5d';c.fillRect(0,0,w,h);c.fillStyle='#4a3520';for(let y=8;y<h;y+=16)for(let x=8;x<w;x+=16){c.beginPath();c.arc(x,y,2.6,0,7);c.fill();}}),
-  drywall:canvasTex(128,128,(c,w,h)=>{c.fillStyle='#d9d3c7';c.fillRect(0,0,w,h);for(let i=0;i<1500;i++){c.fillStyle=`rgba(0,0,0,${rnd(.01,.04)})`;c.fillRect(rnd(0,w),rnd(0,h),2,2);}})
+  wood:pbrTex(512,(u,v)=>{const w=pfbm(u,v,3,2,7,3)*.07,ring=Math.sin((u+w+pfbm(u,v,2,1,9,2)*.12)*Math.PI*2*10)*.5+.5,
+      fine=pfbm(u,v,96,5,3,3),streak=pfbm(u,v,28,3,5,2),pore=pnoise(u,v,160,8,11)>.8?1:0;
+    let t=.3+.22*ring+.28*fine+.2*streak-pore*.2;
+    const du=Math.min(Math.abs(u-.3),1-Math.abs(u-.3)),dv=Math.min(Math.abs(v-.62),1-Math.abs(v-.62)),kd=Math.hypot(du*1.1,dv*.5);
+    if(kd<.09){t-=.18*(1-kd/.09)+Math.sin(kd*220)*.06*(1-kd/.09);}
+    const col=mix3([100,67,38],[176,132,86],Math.max(0,Math.min(1,t)));return[col[0],col[1],col[2],.55+(fine-.5)*.5-pore*.25+(ring-.5)*.15];},4),
+  siding:(base)=>{const B=hex3(base);return pbrTex(512,(u,v)=>{const bd=Math.floor(v*4),l=v*4-bd;let sh=1,h=l*.55+.2;
+      if(l<.1){sh=.62+l*3.5;h=.02+l*2;}else if(l>.94){sh=1.06;}else sh=.94+l*.1;
+      const vr=.96+_h(bd,3,5)*.08,paint=pfbm(u,v,180,180,4,2),st=pfbm(u,v,6,160,8,2),k=sh*vr*(.95+paint*.08+(st-.5)*.06);
+      return[B[0]*k,B[1]*k,B[2]*k,h+(st-.5)*.04];},3);},
+  concrete:pbrTex(512,(u,v,x,y)=>{const m=pfbm(u,v,4,4,2,4),f=pfbm(u,v,128,128,5,2),pit=pnoise(u,v,220,220,9)>.86?1:0,fl=pnoise(u,v,150,150,17)>.93?1:0;
+    let k=.88+m*.24+(f-.5)*.1-pit*.28+fl*.1;if(x<3||y<3)k*=.72;
+    return[157*k,154*k,147*k,m*.35+f*.25-pit*.4-((x<3||y<3)?.4:0)];},2.5),
+  shingle:pbrTex(512,(u,v)=>{const row=Math.floor(v*8),tv=v*8-row,off=(row%2)*.5,tx=u*4+off,tab=Math.floor(tx),tu=tx-tab,
+      vv=44+_h(tab&3,row,4)*34,gr=pfbm(u,v,256,256,3,2),gap=(tu<.04||tu>.96)?1:0,shd=tv>.8?(1-(tv-.8)/.2*.55):1;
+    let k=(vv+(gr-.5)*30)*(gap?.35:1)*shd;
+    return[k,k-2,k+4,gap?.05:.45+tv*.45+(gr-.5)*.15-(tv>.92?.3:0)];},3.5),
+  pegboard:pbrTex(512,(u,v)=>{const cx=u*32,cy=v*32,fx=cx-Math.floor(cx)-.5,fy=cy-Math.floor(cy)-.5,d=Math.hypot(fx,fy),gr=pfbm(u,v,200,60,6,3),hole=d<.17?1:0,rim=d>=.17&&d<.24?1:0;
+    const base=mix3([158,120,76],[196,156,104],gr);const k=hole?.38:rim?.85:1;
+    return[base[0]*k,base[1]*k,base[2]*k,hole?0:.7+(gr-.5)*.2-(rim?.1:0)];},4),
+  drywall:pbrTex(256,(u,v)=>{const n=pfbm(u,v,40,40,2,3),sp=pnoise(u,v,120,120,3),k=.97+n*.05+(sp>.9?-.03:0);
+    return[217*k,211*k,199*k,n];},.22)
 };
-function texMat(tex,rx,ry,extra){const t=tex.clone();t.needsUpdate=true;t.repeat.set(rx,ry);return new THREE.MeshStandardMaterial(Object.assign({map:t,roughness:.9,metalness:0},extra||{}));}
-const std=o=>new THREE.MeshStandardMaterial(Object.assign({roughness:.85,metalness:0},o));
+function texMat(tex,rx,ry,extra){const t=tex.clone();t.needsUpdate=true;t.repeat.set(rx,ry);const o={map:t,roughness:.9,metalness:0};
+  if(tex.nrm){const n=tex.nrm.clone();n.needsUpdate=true;n.repeat.set(rx,ry);o.normalMap=n;o.normalScale=new THREE.Vector2(1,1);}
+  return new THREE.MeshStandardMaterial(Object.assign(o,extra||{}));}
+const std=o=>{if(o&&o.map&&o.map.nrm&&!o.normalMap)o=Object.assign({normalMap:o.map.nrm},o);return new THREE.MeshStandardMaterial(Object.assign({roughness:.85,metalness:0},o));};
 function rbox(w,h,d,rad,fine){const hx=w/2,hy=h/2,hz=d/2,r=Math.min(rad===undefined?.016:rad,Math.min(w,h,d)*.35);
   const g=new THREE.BufferGeometry(),pos=[],nor=[],uv=[],idx=[];
   const lst=(hh)=>hh>r*1.01?(fine?[-hh,-hh+r*.5,-hh+r,hh-r,hh-r*.5,hh]:[-hh,-hh+r,hh-r,hh]):[-hh,hh];
@@ -4131,15 +4168,16 @@ function patchGrassUpdate(x,z,rad){if(!patchGrass)return;const r=rad+.1,i0=Math.
  [stems,blooms].forEach(m=>{m.frustumCulled=false;scene.add(m);});}
 
 // spoil heap: the dirt you dig comes out here, and it grows with the hole
-const dirtTex=canvasTex(256,256,(c,w,h)=>{c.fillStyle='#4a3220';c.fillRect(0,0,w,h);
-  for(let i=0;i<9000;i++){const v=Math.random();c.fillStyle=v<.55?`rgba(25,14,6,${rnd(.1,.35)})`:v<.96?`rgba(120,85,52,${rnd(.08,.26)})`:`rgba(135,132,126,${rnd(.25,.5)})`;c.beginPath();c.arc(rnd(0,w),rnd(0,h),v>.96?rnd(1,2.2):rnd(.8,2.2),0,7);c.fill();}});
+const dirtTex=pbrTex(512,(u,v)=>{const m=pfbm(u,v,5,5,2,4),f=pfbm(u,v,90,90,6,2),peb=pnoise(u,v,70,70,9)>.88?1:0,clod=pnoise(u,v,24,24,12)>.8?1:0;
+  let k=.8+m*.45+(f-.5)*.3;const c=mix3([60,40,25],[104,74,46],Math.max(0,Math.min(1,k-.4)));
+  const r=peb?[128,124,116]:c;const d=clod?.75:1;return[r[0]*d,r[1]*d,r[2]*d,m*.6+f*.3+(peb?.4:0)-(clod?.2:0)];},4);
 const mound=(()=>{const prof=[[0,1],[.08,.96],[.2,.82],[.36,.62],[.55,.4],[.76,.2],[.95,.08],[1.1,0],[1.08,-.25]].map(a=>new THREE.Vector2(a[0],a[1])).reverse();
   const g=new THREE.LatheGeometry(prof,80),p=g.attributes.position,v=new THREE.Vector3();
   for(let i=0;i<p.count;i++){v.fromBufferAttribute(p,i);const a=Math.atan2(v.z,v.x),r=Math.hypot(v.x,v.z);
     const n=Math.sin(a*3+1.3)*.08+Math.sin(a*7+v.y*5)*.04+Math.sin(a*13+v.y*9)*.018,k=1+n*(.35+Math.min(1,r));
     p.setXYZ(i,v.x*k,v.y*(1+(Math.sin(a*5+2)*.05+Math.sin(a*11)*.025)*Math.min(1,r*3)),v.z*k);}
-  g.computeVertexNormals();const t=dirtTex.clone();t.needsUpdate=true;t.repeat.set(10,2);
-  const m=new THREE.Mesh(g,new THREE.MeshStandardMaterial({map:t,roughness:1,metalness:0}));m.position.set(11.4,0,-2.5);m.castShadow=true;m.receiveShadow=true;m.visible=false;scene.add(m);return m;})();
+  g.computeVertexNormals();const t=dirtTex.clone();t.needsUpdate=true;t.repeat.set(10,2);const tn=dirtTex.nrm.clone();tn.needsUpdate=true;tn.repeat.set(10,2);
+  const m=new THREE.Mesh(g,new THREE.MeshStandardMaterial({map:t,normalMap:tn,roughness:1,metalness:0}));m.position.set(11.4,0,-2.5);m.castShadow=true;m.receiveShadow=true;m.visible=false;scene.add(m);return m;})();
 const moundSolid=[1e4,1e4,1e4,1e4];
 function updateMound(){const c=Math.cbrt(1.25*st.vol),rr=Math.min(2.5,c),hh=Math.min(1.9,.68*c);mound.visible=st.vol>.02;
   mound.scale.set(Math.max(.01,rr),Math.max(.01,hh),Math.max(.01,rr));
