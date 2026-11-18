@@ -9,7 +9,7 @@ Each game lives in its own folder and is published together on GitHub Pages.
 |---|---|---|
 | **VR Ball Room** (the original concept: throwing toys, RC car, toy stations, Monke Mode, and the cake maze) | [`vr-ball-game/`](vr-ball-game/) | [/vr-ball-game/](https://benjamingames.github.io/vr-game-experiment/vr-ball-game/) |
 | **VR Ball Room: Procedural** (same game with no asset files: all textures, models, sky and lighting are generated in code) | [`vr-ball-room-procedural/`](vr-ball-room-procedural/) | [/vr-ball-room-procedural/](https://benjamingames.github.io/vr-game-experiment/vr-ball-room-procedural/) |
-| **A Game About Digging a Hole** (single-file game) | [`diggingahole/`](diggingahole/) | [/diggingahole/](https://benjamingames.github.io/vr-game-experiment/diggingahole/) |
+| **A Game About Digging a Hole** (single-file game: layered rock strata, instanced grass, spoil heap, spatial audio, Dig Log board, volume and graphics settings) | [`diggingahole/`](diggingahole/) | [/diggingahole/](https://benjamingames.github.io/vr-game-experiment/diggingahole/) |
 | **Animatronic Repair Shop** (collect broken animatronic parts from the pizzeria stage, rebuild them in your garage; no build step) | [`fnaf-repair/`](fnaf-repair/) | [/fnaf-repair/](https://benjamingames.github.io/vr-game-experiment/fnaf-repair/) |
 | **Boss Arena** (circular metal stage, fence and gates, smiley-ball crowd, Minecraft player vs Springtrap and the Demogorgon; no build step) | [`boss-arena/`](boss-arena/) | [/boss-arena/](https://benjamingames.github.io/vr-game-experiment/boss-arena/) |
 
