@@ -3910,7 +3910,7 @@ function makeCloudTex(){const N=512,c=document.createElement('canvas');c.width=c
     const d=clamp((v-.47)/.2,0,1),k=(y*N+x)*4,q=Math.round(d*d*(3-2*d)*255);img.data[k]=img.data[k+1]=img.data[k+2]=q;img.data[k+3]=255;}
   g.putImageData(img,0,0);const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.anisotropy=4;return t;}
 const skyU={tC:{value:makeCloudTex()},uT:{value:0}};
-scene.add(new THREE.Mesh(new THREE.SphereGeometry(250,32,16),new THREE.ShaderMaterial({side:THREE.BackSide,depthWrite:false,fog:false,uniforms:skyU,
+scene.add(new THREE.Mesh(new THREE.SphereGeometry(250,48,24),new THREE.ShaderMaterial({side:THREE.BackSide,depthWrite:false,fog:false,uniforms:skyU,
   vertexShader:'varying vec3 vP;void main(){vP=normalize(position);gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
   fragmentShader:`uniform sampler2D tC;uniform float uT;varying vec3 vP;
 void main(){float h=vP.y;vec3 top=vec3(.15,.37,.78),mid=vec3(.40,.61,.90),hor=vec3(.80,.87,.93);
@@ -3947,8 +3947,24 @@ const TEX={
 };
 function texMat(tex,rx,ry,extra){const t=tex.clone();t.needsUpdate=true;t.repeat.set(rx,ry);return new THREE.MeshStandardMaterial(Object.assign({map:t,roughness:.9,metalness:0},extra||{}));}
 const std=o=>new THREE.MeshStandardMaterial(Object.assign({roughness:.85,metalness:0},o));
-function box(w,h,d,mat,x,y,z,parent,cast){const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);m.position.set(x,y,z);m.castShadow=cast!==false;m.receiveShadow=true;(parent||scene).add(m);return m;}
-function cyl(rt,rb,h,mat,x,y,z,parent,seg){const m=new THREE.Mesh(new THREE.CylinderGeometry(rt,rb,h,seg||12),mat);m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;(parent||scene).add(m);return m;}
+function rbox(w,h,d,rad,fine){const hx=w/2,hy=h/2,hz=d/2,r=Math.min(rad===undefined?.016:rad,Math.min(w,h,d)*.35);
+  const g=new THREE.BufferGeometry(),pos=[],nor=[],uv=[],idx=[];
+  const lst=(hh)=>hh>r*1.01?(fine?[-hh,-hh+r*.5,-hh+r,hh-r,hh-r*.5,hh]:[-hh,-hh+r,hh-r,hh]):[-hh,hh];
+  const H=[hx,hy,hz],ax=[[2,1,0,1],[2,1,0,-1],[0,2,1,1],[0,2,1,-1],[0,1,2,1],[0,1,2,-1]];
+  // face: [uAxis,vAxis,nAxis,sign]; fix handedness so triangles face outward
+  const faces=[[2,1,0,1],[2,1,0,-1],[0,2,1,1],[0,2,1,-1],[0,1,2,1],[0,1,2,-1]];
+  for(const [ua,va,na,sg] of faces){const U=lst(H[ua]),V=lst(H[va]),base=pos.length/3;
+    for(let j=0;j<V.length;j++)for(let i=0;i<U.length;i++){const p=[0,0,0];p[ua]=U[i];p[va]=V[j];p[na]=sg*H[na];
+      const q=[0,1,2].map(a=>Math.max(-H[a]+r,Math.min(H[a]-r,p[a])));const dv=[p[0]-q[0],p[1]-q[1],p[2]-q[2]],L=Math.hypot(dv[0],dv[1],dv[2])||1;
+      const n=[dv[0]/L,dv[1]/L,dv[2]/L];pos.push(q[0]+n[0]*r,q[1]+n[1]*r,q[2]+n[2]*r);nor.push(n[0],n[1],n[2]);
+      uv.push((U[i]+H[ua])/(2*H[ua]),(V[j]+H[va])/(2*H[va]));}
+    for(let j=0;j<V.length-1;j++)for(let i=0;i<U.length-1;i++){const a=base+j*U.length+i,b=a+1,c=a+U.length,e=c+1;
+      // winding chosen by the sign of (u x v) . n
+      const e1=[0,0,0],e2=[0,0,0];e1[ua]=1;e2[va]=1;const cr=[e1[1]*e2[2]-e1[2]*e2[1],e1[2]*e2[0]-e1[0]*e2[2],e1[0]*e2[1]-e1[1]*e2[0]],dt=cr[na]*sg;
+      if(dt>0)idx.push(a,b,e,a,e,c);else idx.push(a,e,b,a,c,e);}}
+  g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));g.setAttribute('normal',new THREE.Float32BufferAttribute(nor,3));g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));g.setIndex(idx);return g;}
+function box(w,h,d,mat,x,y,z,parent,cast){const m=new THREE.Mesh(rbox(w,h,d,undefined,Math.min(w,h,d)>.12),mat);m.position.set(x,y,z);m.castShadow=cast!==false;m.receiveShadow=true;(parent||scene).add(m);return m;}
+function cyl(rt,rb,h,mat,x,y,z,parent,seg){const m=new THREE.Mesh(new THREE.CylinderGeometry(rt,rb,h,Math.max(24,(seg||12)*2)),mat);m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;(parent||scene).add(m);return m;}
 
 /* ================= GROUND + HOLE ================= */
 const groundMat=new THREE.MeshStandardMaterial({roughness:.96,metalness:0,color:0xffffff});
@@ -4101,13 +4117,13 @@ function patchGrassUpdate(x,z,rad){if(!patchGrass)return;const r=rad+.1,i0=Math.
 // shrubs and flowers along the fence line
 {const spots=[];for(let x=-11.2;x<13.6;x+=rnd(1.4,2.4))spots.push([x,-11.3+rnd(-.15,.25),0,1]);
  for(let z=-9.8;z<6;z+=rnd(1.6,2.6))spots.push([13.2+rnd(-.2,.2),z,-1,0]);for(let z=-9.8;z<6;z+=rnd(1.8,2.8))spots.push([-11.2+rnd(-.15,.2),z,1,0]);
- const im=new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1,1),new THREE.MeshStandardMaterial({roughness:.95,flatShading:true}),spots.length*3);
+ const im=new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1,3),new THREE.MeshStandardMaterial({roughness:.95}),spots.length*3);
  const o=new THREE.Object3D(),c=new THREE.Color();let k=0;
  spots.forEach(([x,z])=>{const base=rnd(.5,.9);for(let q=0;q<3;q++){const sc=base*rnd(.6,1);o.position.set(x+rnd(-.4,.4),sc*.75,z+rnd(-.3,.3));o.scale.set(sc,sc*rnd(.8,1.1),sc);o.rotation.set(rnd(0,3),rnd(0,3),0);o.updateMatrix();im.setMatrixAt(k,o.matrix);c.setHSL(.27+rnd(-.03,.04),.5,.2+rnd(-.04,.06)).convertSRGBToLinear();im.setColorAt(k++,c);}});
  im.castShadow=true;im.receiveShadow=true;im.frustumCulled=false;scene.add(im);
  const pal=[0xe8506a,0xf5d34a,0xf4f0ea,0xb77adf,0xf08a3c],NF=spots.length*4;
- const stems=new THREE.InstancedMesh(new THREE.CylinderGeometry(.004,.005,1,5),new THREE.MeshLambertMaterial({color:new THREE.Color(0x3d6b2a).convertSRGBToLinear()}),NF);
- const blooms=new THREE.InstancedMesh(new THREE.IcosahedronGeometry(.045,0),new THREE.MeshLambertMaterial({}),NF);k=0;
+ const stems=new THREE.InstancedMesh(new THREE.CylinderGeometry(.004,.005,1,8),new THREE.MeshLambertMaterial({color:new THREE.Color(0x3d6b2a).convertSRGBToLinear()}),NF);
+ const blooms=new THREE.InstancedMesh(new THREE.IcosahedronGeometry(.045,2),new THREE.MeshLambertMaterial({}),NF);k=0;
  spots.forEach(([x,z,dx,dz])=>{const cx=x+dx*rnd(.8,1.1),cz=z+dz*rnd(.8,1.1),pc=pal[Math.floor(Math.random()*pal.length)];for(let q=0;q<4;q++){const fx=cx+rnd(-.45,.45),fz=cz+rnd(-.45,.45),h=rnd(.25,.42);
    o.position.set(fx,h/2,fz);o.scale.set(1,h,1);o.rotation.set(0,0,0);o.updateMatrix();stems.setMatrixAt(k,o.matrix);
    o.position.set(fx,h+.01,fz);o.scale.set(rnd(.8,1.2),rnd(.6,.9),rnd(.8,1.2));o.updateMatrix();blooms.setMatrixAt(k,o.matrix);
@@ -4135,7 +4151,7 @@ const FX0=-12,FX1=14,FZ0=-12,FZ1=12;
 {const boards=[];const bw=.145;
  for(let x=FX0;x<FX1;x+=bw){boards.push([x+bw/2,FZ0,0]);boards.push([x+bw/2,FZ1,0]);}
  for(let z=FZ0;z<FZ1;z+=bw){boards.push([FX0,z+bw/2,1]);boards.push([FX1,z+bw/2,1]);}
- const im=new THREE.InstancedMesh(new THREE.BoxGeometry(.14,1.85,.022),std({map:TEX.wood,roughness:.95}),boards.length);
+ const im=new THREE.InstancedMesh(rbox(.14,1.85,.022,.006),std({map:TEX.wood,roughness:.95}),boards.length);
  const o=new THREE.Object3D(),col=new THREE.Color();
  boards.forEach((b,i)=>{o.position.set(b[0],.925+rnd(-.015,.015),b[1]);o.rotation.set(0,b[2]?Math.PI/2:0,0);o.updateMatrix();im.setMatrixAt(i,o.matrix);col.setHSL(.075+rnd(-.01,.01),.32+rnd(-.05,.05),.5+rnd(-.08,.06));im.setColorAt(i,col);});
  im.castShadow=true;im.receiveShadow=true;im.frustumCulled=false;scene.add(im);
@@ -4145,8 +4161,8 @@ const FX0=-12,FX1=14,FZ0=-12,FZ1=12;
 const procTrees=[];
 function tree(x,z,s){const g=new THREE.Group();procTrees.push(g);g.position.set(x,0,z);g.scale.setScalar(s);scene.add(g);
  cyl(.18,.28,3.2,std({color:0x4a3626,roughness:1}),0,1.6,0,g,8);
- const lm=std({color:0x2e5222,flatShading:true,roughness:.95});
- for(let i=0;i<7;i++){const m=new THREE.Mesh(new THREE.IcosahedronGeometry(rnd(1.2,1.9),1),lm.clone());m.material.color.offsetHSL(rnd(-.02,.02),0,rnd(-.06,.05));m.position.set(rnd(-1.4,1.4),rnd(3.4,5.4),rnd(-1.4,1.4));m.castShadow=true;g.add(m);}}
+ const lm=std({color:0x2e5222,roughness:.95});
+ for(let i=0;i<7;i++){const m=new THREE.Mesh(new THREE.IcosahedronGeometry(rnd(1.2,1.9),3),lm.clone());m.material.color.offsetHSL(rnd(-.02,.02),0,rnd(-.06,.05));m.position.set(rnd(-1.4,1.4),rnd(3.4,5.4),rnd(-1.4,1.4));m.castShadow=true;g.add(m);}}
 tree(18,-6,1.2);tree(-17,2,1.1);tree(5,-17,1.3);tree(11.5,8.5,.9);tree(-6,-17,1);tree(24,8,1.4);tree(-20,-12,1.2);
 
 {// house back wall
@@ -4218,7 +4234,7 @@ const bench=new THREE.Group();scene.add(bench);
 // jetpack display (on bench until bought)
 const jetDisplay=new THREE.Group();jetDisplay.position.set(-4.3,.97,-7.45);scene.add(jetDisplay);
 {const tank=std({color:0xc9ccd0,metalness:.8,roughness:.3}),strap=std({color:0x2a2a2a});
- [-.1,.1].forEach(x=>{cyl(.08,.08,.45,tank,x,.25,0,jetDisplay,16);const n=new THREE.Mesh(new THREE.ConeGeometry(.06,.1,12),strap);n.position.set(x,-.02,0);n.rotation.x=Math.PI;jetDisplay.add(n);});
+ [-.1,.1].forEach(x=>{cyl(.08,.08,.45,tank,x,.25,0,jetDisplay,16);const n=new THREE.Mesh(new THREE.ConeGeometry(.06,.1,28),strap);n.position.set(x,-.02,0);n.rotation.x=Math.PI;jetDisplay.add(n);});
  box(.34,.3,.06,strap,0,.28,.1,jetDisplay);box(.36,.05,.08,std({color:0xe3a93b}),0,.4,.1,jetDisplay);}
 
 // iPad stand
@@ -4233,7 +4249,7 @@ const ipadGroup=new THREE.Group();ipadGroup.position.set(-3.15,1.22,-2.55);ipadG
  const grn=std({color:0x2f6b44,roughness:.5,metalness:.3});
  const tray=box(.7,.28,.95,grn,0,.55,0,g);tray.rotation.x=.12;
  box(.6,.22,.85,std({color:0x4a3220}),0,.6,0,g,false).scale.set(1,.2,1);
- const w=new THREE.Mesh(new THREE.TorusGeometry(.17,.05,8,20),std({color:0x1d1d1d}));w.position.set(0,.2,-.6);w.rotation.y=Math.PI/2;w.castShadow=true;g.add(w);
+ const w=new THREE.Mesh(new THREE.TorusGeometry(.17,.05,20,48),std({color:0x1d1d1d}));w.position.set(0,.2,-.6);w.rotation.y=Math.PI/2;w.castShadow=true;g.add(w);
  [-.28,.28].forEach(x=>{const h=box(.04,.04,1.3,std({color:0x6b4a2f}),x,.5,.25,g);h.rotation.x=-.25;});}
 
 /* ================= COLLISION ================= */
@@ -4385,10 +4401,10 @@ goals.draw=p=>{const c=p.ctx,W=p.pw,Hh=p.ph;c.textBaseline='middle';
 /* ================= SHOVEL ================= */
 const shovel=new THREE.Group();const procShovel=new THREE.Group();shovel.add(procShovel);
 const shaftMat=std({roughness:.6}),bladeMat=std({metalness:.85,roughness:.35});
-{const s=new THREE.Mesh(new THREE.CylinderGeometry(.017,.017,1.12,10),shaftMat);s.rotation.x=Math.PI/2;s.position.z=-.4;procShovel.add(s);
- const dg=new THREE.Mesh(new THREE.TorusGeometry(.055,.012,6,16,Math.PI),std({color:0x222222}));dg.position.z=.2;dg.rotation.z=Math.PI/2;dg.rotation.y=Math.PI/2;procShovel.add(dg);
- const bar=new THREE.Mesh(new THREE.CylinderGeometry(.013,.013,.11,8),std({color:0x222222}));bar.rotation.z=Math.PI/2;bar.position.z=.255;procShovel.add(bar);
- const col=new THREE.Mesh(new THREE.CylinderGeometry(.022,.026,.12,10),bladeMat);col.rotation.x=Math.PI/2;col.position.z=-.99;procShovel.add(col);
+{const s=new THREE.Mesh(new THREE.CylinderGeometry(.017,.017,1.12,24),shaftMat);s.rotation.x=Math.PI/2;s.position.z=-.4;procShovel.add(s);
+ const dg=new THREE.Mesh(new THREE.TorusGeometry(.055,.012,14,32,Math.PI),std({color:0x222222}));dg.position.z=.2;dg.rotation.z=Math.PI/2;dg.rotation.y=Math.PI/2;procShovel.add(dg);
+ const bar=new THREE.Mesh(new THREE.CylinderGeometry(.013,.013,.11,20),std({color:0x222222}));bar.rotation.z=Math.PI/2;bar.position.z=.255;procShovel.add(bar);
+ const col=new THREE.Mesh(new THREE.CylinderGeometry(.022,.026,.12,24),bladeMat);col.rotation.x=Math.PI/2;col.position.z=-.99;procShovel.add(col);
  const sh=new THREE.Shape();sh.moveTo(-.12,0);sh.lineTo(.12,0);sh.lineTo(.12,-.2);sh.quadraticCurveTo(.1,-.27,0,-.3);sh.quadraticCurveTo(-.1,-.27,-.12,-.2);sh.lineTo(-.12,0);
  const bg=new THREE.ExtrudeGeometry(sh,{depth:.006,bevelEnabled:false});const bl=new THREE.Mesh(bg,bladeMat);bl.rotation.x=-Math.PI/2;bl.position.set(0,0,-1.04);procShovel.add(bl);}
 shovel.traverse(o=>{if(o.isMesh)o.castShadow=true;});
@@ -4482,12 +4498,12 @@ const vigMat=new THREE.ShaderMaterial({transparent:true,depthTest:false,depthWri
 const vig=new THREE.Mesh(new THREE.PlaneGeometry(1.2,1.2),vigMat);vig.position.z=-.1;vig.renderOrder=999;vig.frustumCulled=false;camera.add(vig);
 
 /* ================= PARTICLES: CHUNKS + JET FLAME ================= */
-const chunkGeo=new THREE.IcosahedronGeometry(.05,0);const chunks=[];
-for(let i=0;i<28;i++){const m=new THREE.Mesh(chunkGeo,std({flatShading:true,roughness:.8}));m.visible=false;m.castShadow=true;scene.add(m);chunks.push({m,v:new THREE.Vector3(),t:0,collect:false});}
+const chunkGeo=new THREE.IcosahedronGeometry(.05,2);const chunks=[];
+for(let i=0;i<28;i++){const m=new THREE.Mesh(chunkGeo,std({roughness:.8}));m.visible=false;m.castShadow=true;scene.add(m);chunks.push({m,v:new THREE.Vector3(),t:0,collect:false});}
 function spawnChunk(color,x,y,z,collect,glow){const c=chunks.find(c=>!c.m.visible);if(!c)return;c.m.material.color.setHex(color);c.m.material.emissive.setHex(glow||0);c.m.position.set(x,y+.05,z);c.m.scale.setScalar(collect?rnd(.9,1.4):rnd(.5,1));c.v.set(rnd(-.8,.8),rnd(2,3.2),rnd(-.8,.8));c.t=0;c.collect=collect;c.m.visible=true;}
 const flame=new THREE.Group();scene.add(flame);
 {const fm=new THREE.MeshBasicMaterial({color:0xffa640,transparent:true,opacity:.85,blending:THREE.AdditiveBlending,depthWrite:false});
- [-.11,.11].forEach(x=>{const c=new THREE.Mesh(new THREE.ConeGeometry(.05,.45,10,1,true),fm);c.rotation.x=Math.PI;c.position.set(x,-.22,0);flame.add(c);});
+ [-.11,.11].forEach(x=>{const c=new THREE.Mesh(new THREE.ConeGeometry(.05,.45,24,1,true),fm);c.rotation.x=Math.PI;c.position.set(x,-.22,0);flame.add(c);});
  flame.visible=false;}
 
 /* ================= AUDIO ================= */
