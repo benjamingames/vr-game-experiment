@@ -34,6 +34,8 @@ jobs:
       - name: Install
         run: npm ci --no-audit --no-fund
         working-directory: vr-ball-game
+        env:
+          ONNXRUNTIME_NODE_INSTALL_CUDA: skip
       - name: Typecheck
         run: npm run typecheck
         working-directory: vr-ball-game
@@ -45,6 +47,8 @@ jobs:
       - name: Install (procedural)
         run: npm ci --no-audit --no-fund
         working-directory: vr-ball-room-procedural
+        env:
+          ONNXRUNTIME_NODE_INSTALL_CUDA: skip
       - name: Typecheck (procedural)
         run: npm run typecheck
         working-directory: vr-ball-room-procedural
