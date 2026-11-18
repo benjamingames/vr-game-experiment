@@ -3803,16 +3803,18 @@ const MATS={
   coal:{name:'Coal',price:12,color:0x232326},
   iron:{name:'Iron ore',price:30,color:0xa8643a},
   gold:{name:'Gold nugget',price:95,color:0xf2c14e,glow:0x3a2a00},
-  diamond:{name:'Diamond',price:450,color:0x9feaff,glow:0x0c3a46}
+  diamond:{name:'Diamond',price:450,color:0x9feaff,glow:0x0c3a46},
+  ruby:{name:'Ruby',price:900,color:0xe0245e,glow:0x4a0618},
+  emerald:{name:'Emerald',price:2800,color:0x2ee57a,glow:0x063a1c}
 };
 const TREASURES=[
   {key:'coin',name:'Old Coin',price:25,color:0xc98b3a,glow:0x2a1600,min:.15,max:5,chance:.06},
   {key:'arrowhead',name:'Flint Arrowhead',price:60,color:0x55504b,min:1,max:9,chance:.04},
   {key:'fossil',name:'Trilobite Fossil',price:150,color:0xb8a98a,min:5,max:20,chance:.03},
   {key:'bone',name:'Dinosaur Bone',price:400,color:0xeee3c8,glow:0x1a1a14,min:12,max:32,chance:.022},
-  {key:'chest',name:'Treasure Chest',price:1500,color:0x7a4a22,glow:0x3a2600,min:22,max:45,chance:.012}];
+  {key:'chest',name:'Treasure Chest',price:1500,color:0x7a4a22,glow:0x3a2600,min:22,max:95,chance:.012}];
 TREASURES.forEach(t=>{MATS[t.key]=t;});
-const ORES=['stone','coal','iron','gold','diamond'];
+const ORES=['stone','coal','iron','gold','diamond','ruby','emerald'];
 const ORDER=ORES.concat(TREASURES.map(t=>t.key));
 const LAYERS=[
   {top:0,name:'Topsoil',hard:0},
@@ -3821,9 +3823,15 @@ const LAYERS=[
   {top:10,name:'Iron vein',hard:2,ore:'iron',chance:.25},
   {top:18,name:'Gold vein',hard:3,ore:'gold',chance:.16},
   {top:28,name:'Kimberlite',hard:4,ore:'diamond',chance:.08},
-  {top:45,name:'Bedrock',hard:99}
+  {top:36,name:'Basalt',hard:4,ore:'ruby',chance:.06},
+  {top:46,name:'Geode layer',hard:4,ore:'diamond',chance:.14},
+  {top:57,name:'Jade seam',hard:4,ore:'emerald',chance:.08},
+  {top:68,name:'Magma rock',hard:4,ore:'gold',chance:.3},
+  {top:78,name:'Obsidian',hard:4,ore:'ruby',chance:.15},
+  {top:86,name:'Mantle',hard:4,ore:'emerald',chance:.15},
+  {top:95,name:'Bedrock',hard:99}
 ];
-const BEDROCK=45;
+const BEDROCK=95;
 const SHOVELS=[
   {name:'Garden Shovel',hard:1,power:1,cost:0,blade:0x7d8083,shaft:0x8e5f35,can:'Topsoil, stone, coal'},
   {name:'Steel Spade',hard:1,power:1.6,cost:50,blade:0xb9c0c6,shaft:0x6b4426,can:'Digs 60% faster'},
@@ -3849,7 +3857,7 @@ const BAGS=[
   {name:'Dump Sack',cap:600,cost:5000}
 ];
 function layerAt(d){let L=LAYERS[0];for(const l of LAYERS)if(d>=l.top)L=l;return L;}
-const DUSTC={'Topsoil':0x6b4a2c,'Stone':0x9a978f,'Coal seam':0x48484a,'Iron vein':0x8a5a3a,'Gold vein':0x93805a,'Kimberlite':0x4c5c5c};
+const DUSTC={'Topsoil':0x6b4a2c,'Stone':0x9a978f,'Coal seam':0x48484a,'Iron vein':0x8a5a3a,'Gold vein':0x93805a,'Kimberlite':0x4c5c5c,'Basalt':0x2c2c30,'Geode layer':0x6a4f8c,'Jade seam':0x3f8a5c,'Magma rock':0x6a2a14,'Obsidian':0x15151a,'Mantle':0x8a3a18};
 
 /* ================= SETTINGS ================= */
 const SET_KEY='dig-a-hole.settings';
@@ -3865,11 +3873,11 @@ applyGfx();
 
 /* ================= SAVE ================= */
 const SAVE_KEY='dig-a-hole.v1';
-function fresh(){const inv={};['stone','coal','iron','gold','diamond','coin','arrowhead','fossil','bone','chest'].forEach(k=>inv[k]=0);return{money:0,shovel:0,jet:0,bag:0,fuel:0,deepest:0,earned:0,inv,found:{},spd:0,dsp:0,vol:0,digs:0,time:0,layers:{},miles:0,done:false};}
+function fresh(){const inv={};['stone','coal','iron','gold','diamond','ruby','emerald','coin','arrowhead','fossil','bone','chest'].forEach(k=>inv[k]=0);return{money:0,shovel:0,jet:0,bag:0,fuel:0,deepest:0,earned:0,inv,found:{},spd:0,dsp:0,vol:0,digs:0,time:0,layers:{},miles:0,done:false};}
 const LVL_MAX=25;const lvlCost=k=>Math.round(30*Math.pow(1.3,st[k]));
 const walkMul=()=>1+.08*st.spd, digMul=()=>1+.12*st.dsp;
 let st=fresh(), savedH=null;
-try{const raw=localStorage.getItem(SAVE_KEY);if(raw){const o=JSON.parse(raw);st=Object.assign(fresh(),o.st||{});st.inv=Object.assign(fresh().inv,(o.st||{}).inv||{});st.found=Object.assign({},(o.st||{}).found||{});st.layers=Object.assign({},(o.st||{}).layers||{});savedH=o.H||null;}}catch(e){}
+try{const raw=localStorage.getItem(SAVE_KEY);if(raw){const o=JSON.parse(raw);st=Object.assign(fresh(),o.st||{});st.inv=Object.assign(fresh().inv,(o.st||{}).inv||{});st.found=Object.assign({},(o.st||{}).found||{});st.layers=Object.assign({},(o.st||{}).layers||{});savedH=o.H||null;if(st.done&&st.deepest<BEDROCK-.6)st.done=false;}}catch(e){}
 let dirty=false;
 function save(){try{localStorage.setItem(SAVE_KEY,JSON.stringify({st,H:Array.from(H,v=>Math.round(v*100))}));}catch(e){}dirty=false;}
 const bagCount=()=>ORDER.reduce((a,k)=>a+st.inv[k],0);
@@ -3978,18 +3986,30 @@ vec3 groundCol(vec3 p){
   else if(dd<10.){lo=vec3(.18,.18,.19);hi=vec3(.33,.32,.32);}
   else if(dd<18.){lo=vec3(.36,.27,.23);hi=vec3(.52,.40,.32);}
   else if(dd<28.){lo=vec3(.28,.26,.25);hi=vec3(.44,.40,.35);}
-  else if(dd<45.){lo=vec3(.14,.19,.19);hi=vec3(.26,.30,.29);}
+  else if(dd<36.){lo=vec3(.14,.19,.19);hi=vec3(.26,.30,.29);}
+  else if(dd<46.){lo=vec3(.07,.07,.08);hi=vec3(.17,.17,.19);}
+  else if(dd<57.){lo=vec3(.20,.14,.28);hi=vec3(.40,.30,.52);}
+  else if(dd<68.){lo=vec3(.09,.22,.15);hi=vec3(.20,.42,.28);}
+  else if(dd<78.){lo=vec3(.10,.045,.035);hi=vec3(.30,.12,.06);}
+  else if(dd<86.){lo=vec3(.015,.015,.025);hi=vec3(.07,.07,.10);}
+  else if(dd<95.){lo=vec3(.12,.04,.025);hi=vec3(.30,.11,.05);}
   else {lo=vec3(.06,.05,.045);hi=vec3(.12,.1,.09);}
   c=mix(lo,hi,n)*(.8+.34*band)*(.84+.3*gr);
-  c*=1.-cr*(dd<45.?.24:.16);
+  c*=1.-cr*(dd<95.?.24:.16);
   float m=max(fl,nug);
   if(dd<5.)c=mix(c,vec3(.78,.76,.70),fl*.35);
   else if(dd<10.)c=mix(c,vec3(.025),m*.95);
   else if(dd<18.)c=mix(c,vec3(.60,.27,.11),m*.9);
   else if(dd<28.){c=mix(c,vec3(1.,.76,.22),m);gEm=vec3(.55,.34,.04)*m;}
-  else if(dd<45.){c=mix(c,vec3(.6,.95,1.),m);gEm=vec3(.12,.5,.6)*m;}
+  else if(dd<36.){c=mix(c,vec3(.6,.95,1.),m);gEm=vec3(.12,.5,.6)*m;}
+  else if(dd<46.){c=mix(c,vec3(.95,.12,.2),m);gEm=vec3(.5,.03,.06)*m;}
+  else if(dd<57.){c=mix(c,vec3(.85,.7,1.),m);gEm=vec3(.3,.15,.45)*m;}
+  else if(dd<68.){c=mix(c,vec3(.2,1.,.5),m);gEm=vec3(.04,.5,.18)*m;}
+  else if(dd<78.){c=mix(c,vec3(1.,.76,.22),m);gEm=vec3(.55,.34,.04)*m+vec3(1.,.32,.04)*smoothstep(.55,.95,cr)*.9;}
+  else if(dd<86.){c=mix(c,vec3(.95,.12,.2),m);gEm=vec3(.5,.03,.06)*m;}
+  else if(dd<95.){c=mix(c,vec3(.2,1.,.5),m);gEm=vec3(.04,.5,.18)*m+vec3(.16,.04,.005)*(.3+band);}
  }
- if(d>=.03){float sm=9.;sm=min(sm,abs(dd-.6));sm=min(sm,abs(dd-5.));sm=min(sm,abs(dd-10.));sm=min(sm,abs(dd-18.));sm=min(sm,abs(dd-28.));sm=min(sm,abs(dd-45.));
+ if(d>=.03){float sm=9.;sm=min(sm,abs(dd-.6));sm=min(sm,abs(dd-5.));sm=min(sm,abs(dd-10.));sm=min(sm,abs(dd-18.));sm=min(sm,abs(dd-28.));sm=min(sm,abs(dd-36.));sm=min(sm,abs(dd-46.));sm=min(sm,abs(dd-57.));sm=min(sm,abs(dd-68.));sm=min(sm,abs(dd-78.));sm=min(sm,abs(dd-86.));sm=min(sm,abs(dd-95.));
   c*=mix(.6,1.,smoothstep(0.,.07,sm));}
  gBump=dd<.6?.3:.6;
  return pow(c,vec3(2.2));
@@ -4252,16 +4272,16 @@ ipad.draw=p=>{const c=p.ctx,W=p.pw,Hh=p.ph;c.textBaseline='middle';
   c.textAlign='right';c.fillStyle='#7a7468';c.font=`600 22px ${FC}`;c.fillText('WALLET',W-32,34);c.fillStyle='#1b1a17';c.font=`700 44px ${FC}`;c.fillText('$'+fmt(st.money),W-32,72);
   let total=0;
   const row=(k,y,i,hidden)=>{const m=MATS[k],n=st.inv[k];total+=n*m.price;
-    c.fillStyle=i%2?'#efece6':'#f5f3ee';c.fillRect(0,y-20,W,40);
+    c.fillStyle=i%2?'#efece6':'#f5f3ee';c.fillRect(0,y-17,W,34);
     c.fillStyle=hidden?'#d6d1c7':'#'+m.color.toString(16).padStart(6,'0');c.beginPath();c.arc(56,y,13,0,7);c.fill();c.strokeStyle='rgba(0,0,0,.25)';c.lineWidth=2;c.stroke();
     c.textAlign='left';c.fillStyle=hidden?'#b3ada1':n?'#1b1a17':'#a9a397';c.font=`600 28px ${FB}`;c.fillText(hidden?'??? not found yet':m.name,86,y);
     c.font=`500 24px ${FB}`;c.fillStyle='#7a7468';if(!hidden)c.fillText('$'+fmt(m.price)+' each',440,y);
     c.textAlign='right';c.fillStyle=n?'#1b1a17':'#a9a397';c.font=`700 30px ${FC}`;c.fillText('× '+n,770,y);
     c.fillStyle=n?'#1f6b3a':'#a9a397';c.fillText('$'+fmt(n*m.price),W-32,y);};
   c.textAlign='left';c.fillStyle='#b8612c';c.font=`700 22px ${FC}`;c.fillText('ROCK & ORE',32,124);
-  ORES.forEach((k,i)=>row(k,156+i*40,i,false));
-  c.textAlign='left';c.fillStyle='#b8612c';c.font=`700 22px ${FC}`;c.fillText('TREASURES  ·  '+TREASURES.filter(t=>st.found[t.key]).length+' of 5 discovered',32,368);
-  TREASURES.forEach((t,i)=>row(t.key,400+i*40,i,!st.found[t.key]&&!st.inv[t.key]));
+  ORES.forEach((k,i)=>row(k,152+i*34,i,false));
+  c.textAlign='left';c.fillStyle='#b8612c';c.font=`700 22px ${FC}`;c.fillText('TREASURES  ·  '+TREASURES.filter(t=>st.found[t.key]).length+' of 5 discovered',32,398);
+  TREASURES.forEach((t,i)=>row(t.key,426+i*34,i,!st.found[t.key]&&!st.inv[t.key]));
   c.textAlign='left';c.fillStyle='#7a7468';c.font=`600 24px ${FC}`;c.fillText(`BACKPACK  ${bagCount()} / ${BAGS[st.bag].cap}   ·   ${BAGS[st.bag].name}`,32,612);
   const can=total>0,h=addBtn(p,'sell',32,632,W-64,58,can,sellAll);
   c.fillStyle=can?(h?'#24834a':'#1f6b3a'):'#c9c4ba';rr(c,32,632,W-64,58,14);c.fill();
@@ -4341,13 +4361,13 @@ const GOALS=[
   {t:'Reach 28 m: diamonds',ok:()=>st.deepest>=28},
   {t:'Earn $10,000 in total',ok:()=>st.earned>=10000},
   {t:'Own the Hydraulic Breaker',ok:()=>st.shovel>=SHOVELS.length-1},
-  {t:'Reach bedrock at 45 m',ok:()=>st.deepest>=BEDROCK-.6}];
+  {t:'Reach bedrock at 95 m',ok:()=>st.deepest>=BEDROCK-.6}];
 goals.draw=p=>{const c=p.ctx,W=p.pw,Hh=p.ph;c.textBaseline='middle';
   c.fillStyle='#24332c';c.fillRect(0,0,W,Hh);
   for(let i=0;i<90;i++){c.fillStyle=`rgba(255,255,255,${.012+(i%5)*.006})`;c.fillRect((i*137)%W,(i*71)%Hh,160+(i%7)*40,3+(i%3)*2);}
   c.textAlign='left';c.fillStyle='#f3efe2';c.font=`700 74px ${FC}`;c.fillText('DIG LOG',56,66);
   c.fillStyle='#9fb3a3';c.font=`500 26px ${FB}`;c.fillText('Chalked up by whoever is down the hole',56,116);
-  const bx=56,by=156,bw=W-112,bh=38,cols=['#4f6b2a','#6e6c67','#3c3c3e','#7a4d33','#7c6a3a','#2f4646','#141010'];
+  const bx=56,by=156,bw=W-112,bh=38,cols=['#4f6b2a','#6e6c67','#3c3c3e','#7a4d33','#7c6a3a','#2f4646','#2b2b30','#5a4378','#2f7a52','#8a3a18','#101014','#a84a1c','#141010'];
   LAYERS.forEach((l,i)=>{const x0=bx+bw*l.top/BEDROCK,x1=i<LAYERS.length-1?bx+bw*LAYERS[i+1].top/BEDROCK:bx+bw;c.fillStyle=cols[i];c.fillRect(x0,by,x1-x0,bh);});
   c.strokeStyle='#f3efe2';c.lineWidth=3;c.strokeRect(bx,by,bw,bh);
   const mx=bx+bw*clamp(st.deepest/BEDROCK,0,1);c.fillStyle='#e3a93b';c.beginPath();c.moveTo(mx,by-3);c.lineTo(mx-12,by-24);c.lineTo(mx+12,by-24);c.closePath();c.fill();
@@ -4693,7 +4713,7 @@ renderer.setAnimationLoop(()=>{
     const L=layerAt(d0);if(L!==curLayer){const first=curLayer!==null&&L.top>curLayer.top&&!st.layers[L.name];curLayer=L;
       if(first){st.layers[L.name]=1;dirty=true;sfx.layer();msg('Entering the '+L.name.toLowerCase()+(L.ore?'. Keep an eye out for '+MATS[L.ore].name.toLowerCase()+'.':L.hard>=99?'. This is the bottom.':'.'));}wristDirty=true;}
     const ms=Math.floor(d0/5);if(ms>st.miles){st.miles=ms;dirty=true;sfx.milestone();msg(ms*5+' metres down.');}
-    if(!st.done&&st.deepest>=BEDROCK-.6){st.done=true;dirty=true;sfx.fanfare();msg('Bedrock at 45 metres. You dug a hole.');}}
+    if(!st.done&&st.deepest>=BEDROCK-.6){st.done=true;dirty=true;sfx.fanfare();msg('Bedrock at '+BEDROCK+' metres. You dug a hole.');}}
 
   // shovel / interaction
   if(mode==='vr'){vrStab(dt);const hit=vrRay();const ph=panelHit(hit);
