@@ -3977,6 +3977,15 @@ const TEX={
   pegboard:pbrTex(512,(u,v)=>{const cx=u*32,cy=v*32,fx=cx-Math.floor(cx)-.5,fy=cy-Math.floor(cy)-.5,d=Math.hypot(fx,fy),gr=pfbm(u,v,200,60,6,3),hole=d<.17?1:0,rim=d>=.17&&d<.24?1:0;
     const base=mix3([158,120,76],[196,156,104],gr);const k=hole?.38:rim?.85:1;
     return[base[0]*k,base[1]*k,base[2]*k,hole?0:.7+(gr-.5)*.2-(rim?.1:0)];},4),
+  leaf:pbrTex(512,(u,v)=>{const G=22;let best=9,second=9,bi=0,bj=0,bx=0,by=0;const gx=u*G,gy=v*G,ci=Math.floor(gx),cj=Math.floor(gy);
+    for(let dj=-1;dj<=1;dj++)for(let di=-1;di<=1;di++){const i=ci+di,j=cj+dj,wi=((i%G)+G)%G,wj=((j%G)+G)%G,px=i+.15+_h(wi,wj,31)*.7,py=j+.15+_h(wi,wj,32)*.7,d=Math.hypot(gx-px,(gy-py)*1.25);
+      if(d<best){second=best;best=d;bi=wi;bj=wj;bx=gx-px;by=gy-py;}else if(d<second)second=d;}
+    const rnd1=_h(bi,bj,33),ang=_h(bi,bj,34)*6.283,al=Math.abs(-bx*Math.sin(ang)+by*Math.cos(ang)),rib=al<.045?1:0,edge=Math.max(0,1-(second-best)*3.2),
+      fine=pfbm(u,v,140,140,3,2),k=(.62+rnd1*.38)*(1-edge*.5)*(1-rib*.18)*(.94+fine*.1);
+    return[150*k+40*k*(rnd1>.5?0:.5),205*k,110*k,.55+(.5-best)*.5-edge*.35-rib*.08+fine*.1];},3),
+  petal:pbrTex(256,(u,v)=>{const a=u*Math.PI*2,pet=Math.pow(Math.abs(Math.cos(a*2.5)),.6),vein=.5+.5*Math.cos(a*30+v*3),r=1-v,
+      body=.72+.28*pet-.12*(1-vein)*.5,ctr=r<.16?1:0,k=ctr?.55:body*(.85+.15*Math.min(1,r*2.5));
+    return[255*k,(ctr?225:255)*k,(ctr?120:255)*k,.4+pet*.5-(ctr?.2:0)];},2),
   drywall:pbrTex(256,(u,v)=>{const n=pfbm(u,v,40,40,2,3),sp=pnoise(u,v,120,120,3),k=.97+n*.05+(sp>.9?-.03:0);
     return[217*k,211*k,199*k,n];},.22)
 };
@@ -4154,13 +4163,13 @@ function patchGrassUpdate(x,z,rad){if(!patchGrass)return;const r=rad+.1,i0=Math.
 // shrubs and flowers along the fence line
 {const spots=[];for(let x=-11.2;x<13.6;x+=rnd(1.4,2.4))spots.push([x,-11.3+rnd(-.15,.25),0,1]);
  for(let z=-9.8;z<6;z+=rnd(1.6,2.6))spots.push([13.2+rnd(-.2,.2),z,-1,0]);for(let z=-9.8;z<6;z+=rnd(1.8,2.8))spots.push([-11.2+rnd(-.15,.2),z,1,0]);
- const im=new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1,3),new THREE.MeshStandardMaterial({roughness:.95}),spots.length*3);
+ const im=new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1,3),texMat(TEX.leaf,5,3,{roughness:.95}),spots.length*3);
  const o=new THREE.Object3D(),c=new THREE.Color();let k=0;
- spots.forEach(([x,z])=>{const base=rnd(.5,.9);for(let q=0;q<3;q++){const sc=base*rnd(.6,1);o.position.set(x+rnd(-.4,.4),sc*.75,z+rnd(-.3,.3));o.scale.set(sc,sc*rnd(.8,1.1),sc);o.rotation.set(rnd(0,3),rnd(0,3),0);o.updateMatrix();im.setMatrixAt(k,o.matrix);c.setHSL(.27+rnd(-.03,.04),.5,.2+rnd(-.04,.06)).convertSRGBToLinear();im.setColorAt(k++,c);}});
+ spots.forEach(([x,z])=>{const base=rnd(.5,.9);for(let q=0;q<3;q++){const sc=base*rnd(.6,1);o.position.set(x+rnd(-.4,.4),sc*.75,z+rnd(-.3,.3));o.scale.set(sc,sc*rnd(.8,1.1),sc);o.rotation.set(rnd(0,3),rnd(0,3),0);o.updateMatrix();im.setMatrixAt(k,o.matrix);c.setHSL(.27+rnd(-.03,.04),.55,.3+rnd(-.04,.06)).convertSRGBToLinear();im.setColorAt(k++,c);}});
  im.castShadow=true;im.receiveShadow=true;im.frustumCulled=false;scene.add(im);
  const pal=[0xe8506a,0xf5d34a,0xf4f0ea,0xb77adf,0xf08a3c],NF=spots.length*4;
  const stems=new THREE.InstancedMesh(new THREE.CylinderGeometry(.004,.005,1,8),new THREE.MeshLambertMaterial({color:new THREE.Color(0x3d6b2a).convertSRGBToLinear()}),NF);
- const blooms=new THREE.InstancedMesh(new THREE.IcosahedronGeometry(.045,2),new THREE.MeshLambertMaterial({}),NF);k=0;
+ const blooms=new THREE.InstancedMesh(new THREE.IcosahedronGeometry(.045,2),new THREE.MeshLambertMaterial({map:TEX.petal}),NF);k=0;
  spots.forEach(([x,z,dx,dz])=>{const cx=x+dx*rnd(.8,1.1),cz=z+dz*rnd(.8,1.1),pc=pal[Math.floor(Math.random()*pal.length)];for(let q=0;q<4;q++){const fx=cx+rnd(-.45,.45),fz=cz+rnd(-.45,.45),h=rnd(.25,.42);
    o.position.set(fx,h/2,fz);o.scale.set(1,h,1);o.rotation.set(0,0,0);o.updateMatrix();stems.setMatrixAt(k,o.matrix);
    o.position.set(fx,h+.01,fz);o.scale.set(rnd(.8,1.2),rnd(.6,.9),rnd(.8,1.2));o.updateMatrix();blooms.setMatrixAt(k,o.matrix);
@@ -4199,7 +4208,7 @@ const FX0=-12,FX1=14,FZ0=-12,FZ1=12;
 const procTrees=[];
 function tree(x,z,s){const g=new THREE.Group();procTrees.push(g);g.position.set(x,0,z);g.scale.setScalar(s);scene.add(g);
  cyl(.18,.28,3.2,std({color:0x4a3626,roughness:1}),0,1.6,0,g,8);
- const lm=std({color:0x2e5222,roughness:.95});
+ const lm=texMat(TEX.leaf,6,3,{color:0x3d7a2c,roughness:.95});
  for(let i=0;i<7;i++){const m=new THREE.Mesh(new THREE.IcosahedronGeometry(rnd(1.2,1.9),3),lm.clone());m.material.color.offsetHSL(rnd(-.02,.02),0,rnd(-.06,.05));m.position.set(rnd(-1.4,1.4),rnd(3.4,5.4),rnd(-1.4,1.4));m.castShadow=true;g.add(m);}}
 tree(18,-6,1.2);tree(-17,2,1.1);tree(5,-17,1.3);tree(11.5,8.5,.9);tree(-6,-17,1);tree(24,8,1.4);tree(-20,-12,1.2);
 
