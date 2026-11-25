@@ -10,8 +10,8 @@ Normal visitors on a non-VR browser only see a "VR only" message. Developers can
 | `js/morph.js` | `Morph`: a rigged GLB you wear. Head follows the headset, arms use two-bone IK to the controllers, legs walk, head meshes are hidden in first person. Springlock failure animation. `MORPH_DEFS` is the morph list. |
 | `js/ui.js` | The in-VR menu panel and the 3-lines wrist button (it also shows the countdown). |
 | `js/nav.js` | Walls / furniture / floor height baked into a 2D grid from the map triangles. |
-| `js/audio.js` | Synthesised springlock snap, plays `models/springlock-failure.mp3` as the laugh, reads its loudness to drive the jaw and the shake. |
-| `models/` | `map.glb`, `springbonnie.glb`, `springtrap.glb` (slimmed with gltf-transform: welded, simplified, WebP textures, spec-gloss converted to metal-rough), `springlock-failure.mp3`. |
+| `js/audio.js` | The springlock CRUNCH (`models/springlock-crunch.mp3`), plays `models/springlock-failure.mp3` as the laugh, reads its loudness to drive the jaw and the shake. |
+| `models/` | `map.glb`, `springbonnie.glb`, `springtrap.glb` (slimmed with gltf-transform: welded, simplified, WebP textures, spec-gloss converted to metal-rough), `springlock-failure.mp3`, `springlock-crunch.mp3`. |
 
 ## Playing
 - Open the menu with the **3 lines** button floating over your left hand (poke it with your right hand, or point and pull the trigger). **Y** also opens it.

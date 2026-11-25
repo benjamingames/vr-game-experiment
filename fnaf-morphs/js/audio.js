@@ -1,11 +1,12 @@
 // FNAF Morphs: audio. The springlock "snap" is synthesised here; the laugh is the supplied mp3.
-let ctx = null, master = null, laughBuf = null, analyser = null, tdata = null, laughLevel = 0, laughSrc = null, laughGain = null;
+let ctx = null, master = null, laughBuf = null, crunchBuf = null, analyser = null, tdata = null, laughLevel = 0, laughSrc = null, laughGain = null;
 
 export function initAudio() {
   if (!ctx) {
     ctx = new (window.AudioContext || window.webkitAudioContext)();
     master = ctx.createGain(); master.gain.value = 0.9; master.connect(ctx.destination);
     analyser = ctx.createAnalyser(); analyser.fftSize = 1024; tdata = new Uint8Array(analyser.fftSize);
+    fetch('./models/springlock-crunch.mp3').then(r => r.arrayBuffer()).then(b => ctx.decodeAudioData(b)).then(buf => { crunchBuf = buf; }).catch(e => console.warn('crunch mp3 failed', e));
     fetch('./models/springlock-failure.mp3').then(r => r.arrayBuffer()).then(b => ctx.decodeAudioData(b)).then(buf => { laughBuf = buf; }).catch(e => console.warn('laugh mp3 failed', e));
   }
   if (ctx.state === 'suspended') ctx.resume();
@@ -38,10 +39,14 @@ function snapOne(when, gain = 1, pitch = 1) {
   sp.connect(sg).connect(master); sp.start(t); lfo.start(t); sp.stop(t + 0.34); lfo.stop(t + 0.34);
 }
 
-// Several springlocks let go one after another: SNAP, snap-snap, snap.
+// The springlock failure: a loud, fast CRUNCH (models/springlock-crunch.mp3), layered twice a hair apart so it hits harder.
 export function playSnap() {
   if (!ctx) return;
-  [[0, 1, 1], [0.045, 0.8, 1.15], [0.1, 0.9, 0.9], [0.17, 0.7, 1.25], [0.26, 0.85, 1.05], [0.35, 0.6, 0.85]].forEach(([w, g, p]) => snapOne(w, g, p));
+  if (!crunchBuf) { snapOne(0, 1, 1); return; }          // fallback synth click if the file is not decoded yet
+  for (const [delay, gain, rate] of [[0, 1, 1], [0.03, 0.7, 0.9]]) {
+    const src = ctx.createBufferSource(); src.buffer = crunchBuf; src.playbackRate.value = rate;
+    const g = ctx.createGain(); g.gain.value = gain; src.connect(g).connect(master); src.start(ctx.currentTime + delay);
+  }
 }
 
 // Plays the laugh from the mp3 (skipping its silent start), fading out after `seconds`.
