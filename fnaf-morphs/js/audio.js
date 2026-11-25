@@ -37,3 +37,15 @@ export function laughAmount(dt) {
 export const laughReady = () => !!laughBuf;
 export const sfxClick = () => { if (!ctx) return; const t = ctx.currentTime, o = ctx.createOscillator(), g = ctx.createGain(); o.type = 'square'; o.frequency.value = 660; g.gain.setValueAtTime(0.05, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.05); o.connect(g).connect(master); o.start(t); o.stop(t + 0.06); };
 export const isRunning = () => !!ctx && ctx.state === 'running';
+
+// A short metal "thunk" for a hook biting into the wall.
+export function playStab() {
+  if (!ctx) return;
+  const t = ctx.currentTime, n = Math.floor(ctx.sampleRate * 0.08), b = ctx.createBuffer(1, n, ctx.sampleRate), d = b.getChannelData(0);
+  for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / n * 9);
+  const src = ctx.createBufferSource(); src.buffer = b; const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1800;
+  const g = ctx.createGain(); g.gain.value = 0.7; src.connect(lp).connect(g).connect(master); src.start(t);
+  const o = ctx.createOscillator(), og = ctx.createGain(); o.frequency.setValueAtTime(130, t); o.frequency.exponentialRampToValueAtTime(55, t + 0.1);
+  og.gain.setValueAtTime(0.8, t); og.gain.exponentialRampToValueAtTime(0.001, t + 0.12); o.connect(og).connect(master); o.start(t); o.stop(t + 0.13);
+  const p = ctx.createOscillator(), pg = ctx.createGain(); p.frequency.value = 2300; pg.gain.setValueAtTime(0.12, t); pg.gain.exponentialRampToValueAtTime(0.0005, t + 0.15); p.connect(pg).connect(master); p.start(t); p.stop(t + 0.16);
+}

@@ -3,7 +3,8 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { NavGrid } from './nav.js';
-import { Morph, MORPH_DEFS, loadMorphAsset, FAIL, reflectPos, reflectQuat } from './morph.js';
+import { Reflector } from 'three/addons/objects/Reflector.js';
+import { Morph, MORPH_DEFS, loadMorphAsset, FAIL } from './morph.js';
 import { Menu, WristButton } from './ui.js';
 import * as A from './audio.js';
 
@@ -42,14 +43,12 @@ map.traverse(o => { if (o.isMesh && o.material) { o.material.side = THREE.FrontS
 const nav = new NavGrid(map, { cell: 0.1, floorY: 0 });
 const SPAWN = (() => { const [x, z] = Q.has('pos') ? Q.get('pos').split(',').map(Number) : [-2.1, -10.9]; return new THREE.Vector3(x, nav.floorAt(x, z), z); })();
 rig.position.copy(SPAWN);
-// prefetch the morph models while the player reads the menu
-MORPH_DEFS.forEach(d => loadMorphAsset(d).catch(e => console.warn('load failed', d.id, e)));
 
 // ---------------- state ----------------
 const S = {
-  morph: null, morphId: null, mirrorMorph: null,
+  morph: null, morphId: null,
   inVR: false, locked: false, timerOn: true, lockT: 0, failing: false, eyeHeight: 1.6, speed: 0,
-  mirror: { on: false, P: new THREE.Vector3(), N: new THREE.Vector3(0, 0, 1), group: null },
+  mirror: { on: false, obj: null },
   yaw: Math.PI, pitch: 0, third: Q.get('view') === 'third',
 };
 const tmpV = new THREE.Vector3(), tmpV2 = new THREE.Vector3(), tmpQ = new THREE.Quaternion();
@@ -84,21 +83,19 @@ function headPose() {
 
 async function selectMorph(id) {
   if (S.morph) { scene.remove(S.morph.root); S.morph = null; S.morphId = null; }
-  killMirrorClone();
   if (id === 'none') { setStatus('You are not wearing a morph.'); return; }
   const def = MORPH_DEFS.find(d => d.id === id); setStatus('Loading ' + def.label + '...');
   const gltf = await loadMorphAsset(def);
   const m = new Morph(def, gltf); scene.add(m.root);
   m.calibrate(S.eyeHeight); m.showHead(S.third && !S.inVR);
+  setStatus(def.climb ? 'Hold GRIP with a hand on a wall to stab in and climb!' : '');
   S.morph = m; S.morphId = id; S.lockT = 0; S.failing = false;
   menu.set('morph', id);
-  if (S.mirror.on) makeMirrorClone();
-  setStatus('');
 }
 function calibrate() {
   const h = S.inVR ? headPose().eye.y - rig.position.y : 1.6;
   S.eyeHeight = THREE.MathUtils.clamp(h, 1.2, 2.0);
-  S.morph?.calibrate(S.eyeHeight); S.mirrorMorph?.calibrate(S.eyeHeight);
+  S.morph?.calibrate(S.eyeHeight);
   setStatus('Height set to ' + S.eyeHeight.toFixed(2) + ' m.');
 }
 function setStatus(t) { menu.set('status', t); S.statusText = t; }
@@ -107,31 +104,36 @@ function triggerSpringlock() {
   if (!S.morph || S.failing) return;
   S.failing = true; S.lockT = 0;
   A.playLaugh(FAIL.laughDelay, FAIL.laugh);
-  S.morph.startFail(); S.mirrorMorph?.startFail();
+  S.morph.startFail();
   for (const c of ctls) buzz(c, 1, 140);
 }
 
-function killMirrorClone() { if (S.mirrorMorph) { scene.remove(S.mirrorMorph.root); S.mirrorMorph = null; } }
-function placeMirror() {
-  const { eye, quat } = headPose(); const f = new THREE.Vector3(0, 0, -1).applyQuaternion(quat); f.y = 0; f.normalize();
-  const M = S.mirror; M.P.copy(eye).addScaledVector(f, 2.2); M.P.y = rig.position.y; M.N.copy(f).negate();
-  if (!M.group) {
-    const g = new THREE.Group();
-    const glass = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 2.3), new THREE.MeshBasicMaterial({ color: 0x9fd0ff, transparent: true, opacity: 0.09, depthWrite: false, side: THREE.DoubleSide }));
-    glass.position.y = 1.2; g.add(glass);
-    const fm = new THREE.MeshStandardMaterial({ color: 0x1a1d24, metalness: 0.7, roughness: 0.4 });
-    for (const [w, h, x, y] of [[1.62, 0.06, 0, 2.38], [1.62, 0.06, 0, 0.03], [0.06, 2.4, -0.78, 1.2], [0.06, 2.4, 0.78, 1.2]]) { const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.06), fm); b.position.set(x, y, 0); g.add(b); }
-    M.group = g; scene.add(g);
-  }
-  M.group.visible = true; M.group.position.copy(M.P); M.group.lookAt(M.P.x + M.N.x, M.P.y, M.P.z + M.N.z);
+// ---------------- mirrors (real planar reflections) ----------------
+// head meshes live on layer 5 so you never see the inside of your own head, but every mirror does
+function makeMirror(w, h, texW = 768) {
+  const g = new THREE.Group();
+  const r = new Reflector(new THREE.PlaneGeometry(w, h), { textureWidth: texW, textureHeight: Math.round(texW * h / w), color: 0xc9d3dd, clipBias: 0.003, multisample: 2 });
+  r.camera.layers.enable(5); r.position.y = h / 2 + 0.2; g.add(r);
+  const fm = new THREE.MeshStandardMaterial({ color: 0x15171d, metalness: 0.6, roughness: 0.45 }), t = 0.08;
+  for (const [bw, bh, x, y] of [[w + t * 2, t, 0, h + 0.2 + t / 2], [w + t * 2, t, 0, 0.2 - t / 2], [t, h + t * 2, -w / 2 - t / 2, h / 2 + 0.2], [t, h + t * 2, w / 2 + t / 2, h / 2 + 0.2]]) { const b = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, 0.06), fm); b.position.set(x, y, -0.02); g.add(b); }
+  scene.add(g); return g;
 }
-function makeMirrorClone() {
-  killMirrorClone(); if (!S.morph) return;
-  loadMorphAsset(S.morph.def).then(g => { if (!S.mirror.on || !S.morph) return; const m = new Morph(S.morph.def, g); m.calibrate(S.eyeHeight); m.showHead(true); scene.add(m.root); S.mirrorMorph = m; });
-}
+// the permanent one: on the back wall of the show stage, facing the dining room
+const STAGE_MIRROR = (() => {
+  const x = -0.1; let wz = -13.2;
+  for (let z = -11.8; z > -14.2; z -= 0.05) { const k = nav.cellAt(x, z); if (k < 0 || nav.blocked[k] || nav.floor[k] < -1e8) { wz = z + 0.05; break; } }
+  const g = makeMirror(3.2, 2.0), fy = nav.floorAt(x, wz + 0.6);
+  g.position.set(x, fy + 0.35, wz + 0.04); return g;
+})();
+// the portable one (menu button): appears 2 m in front of you
 function setMirror(on) {
   S.mirror.on = on; menu.set('mirror', on);
-  if (on) { placeMirror(); makeMirrorClone(); } else { if (S.mirror.group) S.mirror.group.visible = false; killMirrorClone(); }
+  if (!S.mirror.obj) S.mirror.obj = makeMirror(1.5, 2.2, 512);
+  const g = S.mirror.obj; g.visible = on;
+  if (on) {
+    const { eye, quat } = headPose(); const f = new THREE.Vector3(0, 0, -1).applyQuaternion(quat); f.y = 0; f.normalize();
+    g.position.set(eye.x + f.x * 2.0, rig.position.y, eye.z + f.z * 2.0); g.lookAt(eye.x, g.position.y, eye.z);
+  }
 }
 
 function onMenuButton(id) {
@@ -151,7 +153,7 @@ function snapTurn(a) {
   camera.getWorldPosition(tmpV); rig.rotation.y += a; rig.updateMatrixWorld(true); camera.getWorldPosition(tmpV2);
   rig.position.x += tmpV.x - tmpV2.x; rig.position.z += tmpV.z - tmpV2.z;
 }
-let snapReady = true, lastX = 0, lastZ = 0, wristCool = 0;
+let snapReady = true, lastX = SPAWN.x, lastZ = SPAWN.z, wristCool = 0;
 function stepPlayer(dt) {
   let mx = 0, mz = 0, fwdYaw = 0;
   const vr = S.inVR;
@@ -180,7 +182,45 @@ function stepPlayer(dt) {
   }
   S.speed += (Math.min(6, Math.hypot(hx - lastX, hz - lastZ) / Math.max(dt, 1e-4)) - S.speed) * Math.min(1, dt * 8);
   lastX = hx; lastZ = hz;
-  const fy = nav.floorAt(hx, hz); rig.position.y += (fy - rig.position.y) * Math.min(1, dt * 12);
+}
+
+// ---------------- Foxy: stab a hook into a wall and climb ----------------
+// Hold GRIP with a hand against a tall wall: the hook bites in and that hand stays pinned there. Pull with your arms and the whole
+// player moves the opposite way, so you haul yourself up (either hand, or both). Let go and you drop (with a little throw).
+const climb = { L: null, R: null, vy: 0, air: false, climbing: false, vel: new THREE.Vector3(), fake: null };
+function handState(sd) {
+  if (climb.fake) { const f = climb.fake[sd]; return { pos: rig.localToWorld(f.local.clone()), squeeze: f.squeeze, fake: true }; }
+  const ctl = side(sd === 'L' ? 'left' : 'right'); if (!ctl) return null;
+  const p = gripPose(ctl); return { pos: p.pos, squeeze: !!ctl.gamepad?.buttons[1]?.pressed, ctl };
+}
+function stepClimb(dt) {
+  const can = !!S.morph?.def.climb;
+  const head = headPose().eye;
+  let n = 0, dx = 0, dy = 0, dz = 0, ceil = 6;
+  for (const sd of ['L', 'R']) {
+    const h = can ? handState(sd) : null;
+    if (!h || !h.squeeze) { climb[sd] = null; continue; }
+    if (!climb[sd]) {                                   // hand closed: stab if a tall wall is right there
+      const w = nav.wallNear(h.pos.x, h.pos.y, h.pos.z, 0.22);
+      if (w && h.pos.y > nav.floorAt(h.pos.x, h.pos.z) + 0.15) { climb[sd] = { p: h.pos.clone(), top: w.top }; A.playStab(); if (h.ctl) buzz(h.ctl, 1, 90); }
+      continue;
+    }
+    dx += climb[sd].p.x - h.pos.x; dy += climb[sd].p.y - h.pos.y; dz += climb[sd].p.z - h.pos.z; ceil = Math.min(ceil, climb[sd].top + 0.4); n++;
+  }
+  if (n) {
+    dx /= n; dy /= n; dz /= n;
+    const [ax, az] = nav.move(head.x, head.z, head.x + dx, head.z + dz, 0.2);
+    rig.position.x += ax - head.x; rig.position.z += az - head.z;
+    const floor = nav.floorAt(ax, az), ny = THREE.MathUtils.clamp(rig.position.y + dy, floor, ceil);
+    climb.vel.lerp(tmpV.set(0, (ny - rig.position.y) / Math.max(dt, 1e-4), 0), Math.min(1, dt * 12));
+    rig.position.y = ny; climb.climbing = true; climb.air = false; climb.vy = 0;
+  } else {
+    if (climb.climbing) { climb.climbing = false; climb.air = true; climb.vy = THREE.MathUtils.clamp(climb.vel.y * 0.6, -2, 3); }
+    const fy = nav.floorAt(head.x, head.z);
+    if (climb.air) { climb.vy -= 9.8 * dt; rig.position.y += climb.vy * dt; if (rig.position.y <= fy) { rig.position.y = fy; climb.air = false; climb.vy = 0; } }
+    else rig.position.y += (fy - rig.position.y) * Math.min(1, dt * 12);
+  }
+  S.climbing = climb.climbing;
 }
 
 // ---------------- VR menu interaction ----------------
@@ -196,7 +236,7 @@ function stepMenuInput(dt) {
     wrist.mesh.lookAt(head.eye);
   }
   let timerText = '';
-  if (S.morph && S.timerOn) { const r = Math.max(0, Math.ceil(LOCK_AT - S.lockT)); timerText = S.failing ? '!!!' : Math.floor(r / 60) + ':' + String(r % 60).padStart(2, '0'); }
+  if (S.morph?.def.springlock && S.timerOn) { const r = Math.max(0, Math.ceil(LOCK_AT - S.lockT)); timerText = S.failing ? '!!!' : Math.floor(r / 60) + ':' + String(r % 60).padStart(2, '0'); }
   // poke it with the right hand, or point + trigger
   let near = false;
   if (R && wrist.mesh.visible) { R.grip.getWorldPosition(tmpV2); near = tmpV2.distanceTo(wrist.mesh.position) < 0.07; if (near && wristCool <= 0) { toggleMenu(); wristCool = 0.8; buzz(R, 0.5, 40); } }
@@ -226,10 +266,12 @@ let fakeT = 0;
 function drive(eye, quat, Lg, Rg, mirrored) {
   return { eye, headQuat: quat, L: Lg, R: Rg, speed: S.speed, laugh: S.laughLevel || 0 };
 }
+function handPose(sd) { if (climb.fake) { const h = handState(sd); return { pos: h.pos, quat: rig.quaternion.clone() }; } return gripPose(side(sd === 'L' ? 'left' : 'right')); }
 function gripPose(ctl) { if (!ctl?.connected) return null; const pos = new THREE.Vector3(), q = new THREE.Quaternion(); ctl.grip.getWorldPosition(pos); ctl.grip.getWorldQuaternion(q); return { pos, quat: q }; }
 
 function tick(dt) {
   stepPlayer(dt);
+  stepClimb(dt);
   rig.updateMatrixWorld(true);
   stepMenuInput(dt);
   // springlock countdown
@@ -240,14 +282,8 @@ function tick(dt) {
   S.laughLevel = ft === undefined ? 0 : (A.isRunning() ? A.laughAmount(dt) : (ft > FAIL.laughDelay && ft < FAIL.laughDelay + FAIL.laugh ? 0.35 + 0.65 * Math.abs(Math.sin(ft * 6.5)) : 0));
   if (S.morph) {
     const { eye, quat } = headPose();
-    const Lg = gripPose(side('left')), Rg = gripPose(side('right'));
+    const Lg = handPose('L'), Rg = handPose('R');
     S.morph.update(dt, drive(eye, quat, Lg, Rg));
-    if (S.mirrorMorph && S.mirror.on) {
-      const { P, N } = S.mirror;
-      const m = S.mirrorMorph, mq = r => r ? { pos: reflectPos(r.pos, P, N), quat: reflectQuat(r.quat, N) } : null;
-      // a mirror image swaps left and right: your right hand is the reflection's left hand
-      m.update(dt, drive(reflectPos(eye, P, N), reflectQuat(quat, N), mq(Rg), mq(Lg)));
-    }
   }
 }
 
@@ -312,7 +348,7 @@ renderer.setAnimationLoop(now => {
 });
 
 // scripted starts for screenshots / tests (?debug=1&morph=springtrap&mirror=1&fail=2)
-window.fm = { scene, rig, camera, nav, S, menu, selectMorph, triggerSpringlock, setMirror, toggleMenu, tick, headPose, calibrate,
+window.fm = { scene, rig, camera, nav, S, menu, climb, STAGE_MIRROR, setStatus, selectMorph, triggerSpringlock, setMirror, toggleMenu, tick, headPose, calibrate,
   step(sec, dt = 1 / 30) { for (let t = 0; t < sec; t += dt) { placeDesktopCamera(); tick(dt); } } };
 if (DEBUG) {
   if (Q.has('start')) startDesktop();

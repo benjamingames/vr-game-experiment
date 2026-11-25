@@ -5,17 +5,24 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 
 const loader = new GLTFLoader();
-const BONE_RE = {
-  pelvis: /^bip_pelvis/i, spine: /^bip_spine_0/i, neck: /^bip_neck/i, head: /^bip_head(_\d+|_Armature)$/i, jaw: /^bip_jaw(_\d+|_Armature)$/i,
-  eyeL: /^bip_eye_L/i, eyeR: /^bip_eye_R/i,
-  upL: /^bip_upperarm_L/i, loL: /^bip_lowerarm_L/i, hdL: /^bip_hand_L/i, upR: /^bip_upperarm_R/i, loR: /^bip_lowerarm_R/i, hdR: /^bip_hand_R/i,
-  hipL: /^bip_hip_L/i, kneeL: /^bip_knee_L/i, footL: /^bip_foot_L/i, hipR: /^bip_hip_R/i, kneeR: /^bip_knee_R/i, footR: /^bip_foot_R/i,
-};
+// Bone names with their numeric / skeleton suffix stripped (see norm()). BIP covers the Source-style FNAF rigs, FOXY the Fortnite rig.
+const BIP = { pelvis: 'bip_pelvis', spine: 'bip_spine_0', neck: 'bip_neck', head: 'bip_head', jaw: 'bip_jaw', eyeL: 'bip_eye_L', eyeR: 'bip_eye_R',
+  upL: 'bip_upperarm_L', loL: 'bip_lowerarm_L', hdL: 'bip_hand_L', upR: 'bip_upperarm_R', loR: 'bip_lowerarm_R', hdR: 'bip_hand_R',
+  hipL: 'bip_hip_L', kneeL: 'bip_knee_L', footL: 'bip_foot_L', hipR: 'bip_hip_R', kneeR: 'bip_knee_R', footR: 'bip_foot_R' };
+const FOXY = { pelvis: 'pelvis', spine: 'spine_03', neck: 'neck_01', head: 'head', jaw: 'C_jaw', eyeL: 'L_eye', eyeR: 'R_eye',
+  upL: 'upperarm_l', loL: 'lowerarm_l', hdL: 'hand_l', upR: 'upperarm_r', loR: 'lowerarm_r', hdR: 'hand_r',
+  hipL: 'thigh_l', kneeL: 'calf_l', footL: 'foot_l', hipR: 'thigh_r', kneeR: 'calf_r', footR: 'foot_r' };
+const norm = n => n.replace(/(_[A-Za-z0-9]+qc_skeleton)?(_\d+|_Armature)$/i, '').toLowerCase();
 
 // Add a morph here (plus its .glb in models/) and it shows up in the menu.
+//   springlock: gets the 1:30 springlock failure.  climb: can stab its hands into walls and climb (grip button).
 export const MORPH_DEFS = [
-  { id: 'springbonnie', label: 'Spring Bonnie', file: 'springbonnie.glb', color: '#e3b52a', springlock: true },
-  { id: 'springtrap', label: 'Springtrap', file: 'springtrap.glb', color: '#7d8a3a', springlock: true },
+  { id: 'springbonnie', label: 'Spring Bonnie', icon: '\u{1F430}', file: 'springbonnie.glb', color: '#e3b52a', springlock: true },
+  { id: 'springtrap', label: 'Springtrap', icon: '\u{1F430}', file: 'springtrap.glb', color: '#7d8a3a', springlock: true },
+  { id: 'freddy', label: 'Freddy', icon: '\u{1F43B}', file: 'freddy.glb', color: '#9b6a38' },
+  { id: 'bonnie', label: 'Bonnie', icon: '\u{1F430}', file: 'bonnie.glb', color: '#4f63c9' },
+  { id: 'chica', label: 'Chica', icon: '\u{1F414}', file: 'chica.glb', color: '#f0c419' },
+  { id: 'foxy', label: 'Foxy', icon: '\u{1F98A}', file: 'foxy.glb', color: '#c8402c', names: FOXY, climb: true, hookHand: 'L' },
 ];
 
 const cache = new Map();
@@ -38,10 +45,6 @@ function aim(bone, child, target) {
 const basisQuat = (x, y, z) => new THREE.Quaternion().setFromRotationMatrix(_m.makeBasis(x, y, z));
 const smooth = x => x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x);
 
-// hand-bone alignment: controller grip space -> the rest hand (fingers forward, palm inward), derived from the T-pose
-const R_L = basisQuat(new THREE.Vector3(0, 0, -1), new THREE.Vector3(-1, 0, 0), new THREE.Vector3(0, 1, 0));
-const R_R = basisQuat(new THREE.Vector3(0, 0, 1), new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0));
-
 export const FAIL = { laugh: 10, ret: 1.8, laughDelay: 0 };   // seconds
 FAIL.total = FAIL.laughDelay + FAIL.laugh + FAIL.ret;
 
@@ -56,7 +59,8 @@ export class Morph {
     this.bones = {};
     const all = [];
     this.model.traverse(o => { if (o.isBone) all.push(o); });
-    for (const k in BONE_RE) this.bones[k] = all.find(b => BONE_RE[k].test(b.name));
+    const names = def.names || BIP;
+    for (const k in names) this.bones[k] = all.find(b => norm(b.name) === names[k].toLowerCase());
     const B = this.bones;
     const need = ['head', 'upL', 'loL', 'hdL', 'upR', 'loR', 'hdR'].filter(k => !B[k]);
     if (need.length) console.warn(def.id, 'missing bones', need);
@@ -64,11 +68,23 @@ export class Morph {
     // rest measurements (model units; root is at identity right now)
     this.qHand0 = { L: B.hdL.getWorldQuaternion(new THREE.Quaternion()), R: B.hdR.getWorldQuaternion(new THREE.Quaternion()) };
     this.qHead0 = B.head.getWorldQuaternion(new THREE.Quaternion());
+    // rest hand frame (F = fingers, N = palm): works for T-pose and A-pose rigs
+    this.hand0 = {};
+    for (const sd of ['L', 'R']) {
+      const hd = B['hd' + sd], hp = wp(hd, new THREE.Vector3());
+      const kids = hd.children.filter(o => o.isBone && !/dyn|twist/i.test(o.name));
+      const mid = kids.find(o => /middle/i.test(o.name)) || kids.sort((a, b) => wp(b, new THREE.Vector3()).distanceTo(hp) - wp(a, new THREE.Vector3()).distanceTo(hp))[0];
+      const F0 = mid ? wp(mid, new THREE.Vector3()).sub(hp).normalize() : new THREE.Vector3(sd === 'L' ? 1 : -1, 0, 0);
+      const N0 = Math.abs(F0.y) < 0.5 ? new THREE.Vector3(0, -1, 0) : new THREE.Vector3(sd === 'L' ? -1 : 1, 0, 0);
+      N0.addScaledVector(F0, -N0.dot(F0)).normalize();
+      this.hand0[sd] = { F0, Q: basisQuat(F0, N0, new THREE.Vector3().crossVectors(F0, N0)) };
+    }
     const eye = this.eyeWorld(new THREE.Vector3());
     this.eyeY0 = eye.y; this.k = 1; this.bodyYaw = 0; this.phase = 0; this.fail = null; this.walk = 0;
     this.baseMin = new THREE.Box3().setFromObject(this.model).min.y;
     this.setupHeadHiding(all);
-    this.setupParts();
+    this.parts = []; if (def.springlock) this.setupParts();
+    if (def.climb) this.setupHooks();
     this.showHead(true);
   }
   eyeWorld(out) {
@@ -92,7 +108,8 @@ export class Morph {
       if (inHead) this.headMeshes.push(m);
     });
   }
-  showHead(v) { for (const m of this.headMeshes) m.visible = v; }
+  // The head is hidden from your own eyes by moving it to layer 5, which only mirrors / reflections look at.
+  showHead(v) { for (const m of this.headMeshes) m.layers.set(v ? 0 : 5); }
 
   // Rigid suit plates (meshes parented to bones). Each gets an outward direction for the springlock burst.
   setupParts() {
@@ -117,6 +134,26 @@ export class Morph {
       bone.updateWorldMatrix(true, false);
       const dirLocal = dir.clone().transformDirection(bone.matrixWorld.clone().invert());
       this.parts.push({ m: node, rest: node.position.clone(), restQ: node.quaternion.clone(), dirLocal, scale: bone.matrixWorld.getMaxScaleOnAxis(), amp: 0.07 + Math.random() * 0.1, delay: Math.random() * 0.28, axis: new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize(), tilt: (Math.random() - 0.3) * 0.5, ph: Math.random() * 6.28 });
+    }
+  }
+
+  // Foxy: a steel hook for each hand (the model already has one on the left; the right gets a matching one so both hands can stab).
+  setupHooks() {
+    const B = this.bones, mat = new THREE.MeshStandardMaterial({ color: 0xb9c0c8, metalness: 0.95, roughness: 0.28 });
+    const u = this.eyeY0 / 1.6;                       // metres -> model units
+    this.hooks = {};
+    for (const sd of ['L', 'R']) {
+      if (sd === this.def.hookHand) continue;         // this hand's hook is already part of the model
+      const hd = B['hd' + sd], g = new THREE.Group();
+      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.012 * u, 0.016 * u, 0.12 * u, 10), mat); shaft.rotation.z = Math.PI / 2; shaft.position.x = 0.06 * u; g.add(shaft);
+      const arc = new THREE.Mesh(new THREE.TorusGeometry(0.05 * u, 0.011 * u, 8, 20, Math.PI * 1.25), mat); arc.position.set(0.12 * u, -0.05 * u, 0); arc.rotation.z = Math.PI / 2; g.add(arc);
+      const tip = new THREE.Mesh(new THREE.ConeGeometry(0.014 * u, 0.045 * u, 10), mat); tip.position.set(0.075 * u, -0.072 * u, 0); tip.rotation.z = Math.PI * 0.72; g.add(tip);
+      // orient so +X (shaft) follows the hand's finger direction
+      const F0 = this.hand0[sd].F0; const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(1, 0, 0), F0);
+      hd.updateWorldMatrix(true, false); const hq = hd.getWorldQuaternion(new THREE.Quaternion());
+      g.quaternion.copy(hq.invert().multiply(q)); g.position.copy(new THREE.Vector3(0, 0, 0));
+      hd.add(g); g.traverse(o => { if (o.isMesh) o.frustumCulled = false; });
+      this.hooks[sd] = g;
     }
   }
 
@@ -182,13 +219,12 @@ export class Morph {
       const up = B['up' + side], lo = B['lo' + side], hd = B['hd' + side];
       const tgt = d[side];
       let handQ, wrist;
-      const Rm = side === 'L' ? R_L : R_R;
+      const gq = tgt ? tgt.quat : yawQ, h0 = this.hand0[side];
+      const Fc = new THREE.Vector3(0, 0, -1).applyQuaternion(gq), Nc = new THREE.Vector3(sg > 0 ? -1 : 1, 0, 0).applyQuaternion(gq);   // finger / palm direction from the controller
+      handQ = basisQuat(Fc, Nc, new THREE.Vector3().crossVectors(Fc, Nc)).multiply(_q2.copy(h0.Q).invert()).multiply(this.qHand0[side]);
       if (tgt) {
-        handQ = tgt.quat.clone().multiply(Rm).multiply(this.qHand0[side]);
-        const F = new THREE.Vector3(side === 'L' ? 1 : -1, 0, 0).applyQuaternion(handQ);   // finger direction in world
-        wrist = tgt.pos.clone().addScaledVector(F, -0.07);
+        wrist = tgt.pos.clone().addScaledVector(Fc, -0.07);
       } else {
-        handQ = yawQ.clone().multiply(Rm).multiply(this.qHand0[side]);
         wrist = pelvis.clone().addScaledVector(right, sg * 0.3 * k * 1.3).addScaledVector(fwd, 0.05).add(new THREE.Vector3(0, 0.12 * k * 1.3, 0));
       }
       const S = wp(up, new THREE.Vector3()), E = wp(lo, new THREE.Vector3()), W = wp(hd, new THREE.Vector3());

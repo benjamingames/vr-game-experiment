@@ -10,6 +10,7 @@ export class NavGrid {
     this.w = Math.ceil((box.max.x - box.min.x + 2) / cell); this.h = Math.ceil((box.max.z - box.min.z + 2) / cell);
     this.blocked = new Uint8Array(this.w * this.h);
     this.floor = new Float32Array(this.w * this.h).fill(-1e9);
+    this.top = new Float32Array(this.w * this.h).fill(-1e9);   // highest point of the walls in each cell (for climbing)
     this.floorY = floorY; this.maxStep = maxStep;
     const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), n = new THREE.Vector3(), e1 = new THREE.Vector3(), e2 = new THREE.Vector3();
     const step = cell * 0.7;
@@ -24,7 +25,7 @@ export class NavGrid {
         const len = n.length(); if (len < 1e-9) continue;
         const ny = n.y / len, ymin = Math.min(a.y, b.y, c.y), ymax = Math.max(a.y, b.y, c.y);
         let mode = 0;
-        if (Math.abs(ny) < 0.6) { if (ymax >= floorY + minBlock && ymin <= floorY + maxBlock) mode = 1; }
+        if (Math.abs(ny) < 0.6) { if (ymax >= floorY + minBlock) mode = ymin <= floorY + maxBlock ? 1 : 3; }
         else if (ny > 0 && (a.y + b.y + c.y) / 3 <= floorY + maxStep && (a.y + b.y + c.y) / 3 >= floorY - 0.6) mode = 2;
         if (!mode) continue;
         const n1 = Math.max(1, Math.ceil(e1.length() / step)), n2 = Math.max(1, Math.ceil(e2.length() / step));
@@ -36,7 +37,8 @@ export class NavGrid {
             const ix = Math.floor((x - this.x0) / cell), iz = Math.floor((z - this.z0) / cell);
             if (ix < 0 || iz < 0 || ix >= this.w || iz >= this.h) continue;
             const k = iz * this.w + ix;
-            if (mode === 1) this.blocked[k] = 1;
+            if (mode === 1) { this.blocked[k] = 1; if (ymax > this.top[k]) this.top[k] = ymax; }
+            else if (mode === 3) { if (ymax > this.top[k]) this.top[k] = ymax; }
             else { const y = a.y + e1.y * u + e2.y * v; if (y > this.floor[k]) this.floor[k] = y; }
           }
         }
@@ -61,6 +63,15 @@ export class NavGrid {
     if (!this.hit(nx, z, r)) return [nx, z];
     if (!this.hit(x, nz, r)) return [x, nz];
     return [x, z];
+  }
+  // A tall wall (>= minTop high) within r of a hand at (x, y, z)? Returns the wall's top height and the nearest wall cell centre, or null.
+  wallNear(x, y, z, r = 0.2, minTop = 2.0) {
+    const c = this.cell; let best = null, bd = 1e9;
+    for (let dz = -r; dz <= r + 1e-6; dz += c) for (let dx = -r; dx <= r + 1e-6; dx += c) {
+      const k = this.cellAt(x + dx, z + dz); if (k < 0 || !this.blocked[k] || this.top[k] < minTop || y > this.top[k]) continue;
+      const d = dx * dx + dz * dz; if (d < bd) { bd = d; best = { top: this.top[k], x: x + dx, z: z + dz }; }
+    }
+    return best;
   }
   floorAt(x, z) { const k = this.cellAt(x, z); return k >= 0 && this.floor[k] > -1e8 ? this.floor[k] : this.floorY; }
   // Debug: a canvas picture of the grid.

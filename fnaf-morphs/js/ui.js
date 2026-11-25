@@ -19,8 +19,8 @@ export class Menu {
   }
   layout() {
     const b = [];
-    MORPH_DEFS.forEach((d, i) => b.push({ id: 'morph:' + d.id, x: 36 + i * 236, y: 150, w: 220, h: 190, kind: 'card', def: d }));
-    b.push({ id: 'morph:none', x: 36 + MORPH_DEFS.length * 236, y: 150, w: 220, h: 190, kind: 'card', def: { label: 'No morph', color: '#556' } });
+    MORPH_DEFS.forEach((d, i) => b.push({ id: 'morph:' + d.id, x: 36 + i * 138, y: 150, w: 130, h: 190, kind: 'card', def: d }));
+    b.push({ id: 'morph:none', x: 36 + MORPH_DEFS.length * 138, y: 150, w: 130, h: 190, kind: 'card', def: { label: 'No morph', color: '#556', icon: '?' } });
     b.push({ id: 'timer', x: 36, y: 400, w: 300, h: 78, kind: 'btn' });
     b.push({ id: 'springlock', x: 356, y: 400, w: 300, h: 78, kind: 'btn', label: 'Springlock NOW' });
     b.push({ id: 'mirror', x: 676, y: 400, w: 312, h: 78, kind: 'btn' });
@@ -43,10 +43,10 @@ export class Menu {
         const sel = (b.id === 'morph:none' && !s.morph) || b.id === 'morph:' + s.morph;
         g.fillStyle = hot ? '#2b3445' : '#171d29'; rr(g, b.x, b.y, b.w, b.h, 20); g.fill();
         g.lineWidth = sel ? 7 : 3; g.strokeStyle = sel ? '#35d0ff' : (hot ? '#ff9a3c' : '#3a4354'); rr(g, b.x, b.y, b.w, b.h, 20); g.stroke();
-        g.fillStyle = b.def.color; g.beginPath(); g.arc(b.x + b.w / 2, b.y + 70, 44, 0, 7); g.fill();
-        g.fillStyle = '#0c0f16'; g.font = font(900, 40); g.textAlign = 'center'; g.fillText(b.id === 'morph:none' ? '?' : '\u{1F430}', b.x + b.w / 2, b.y + 84);
-        g.fillStyle = '#f2efe6'; g.font = font(800, 27); g.fillText(b.def.label, b.x + b.w / 2, b.y + 152);
-        if (sel) { g.fillStyle = '#35d0ff'; g.font = font(800, 20); g.fillText('WEARING', b.x + b.w / 2, b.y + 178); }
+        g.fillStyle = b.def.color; g.beginPath(); g.arc(b.x + b.w / 2, b.y + 64, 40, 0, 7); g.fill();
+        g.fillStyle = '#0c0f16'; g.font = font(900, 38); g.textAlign = 'center'; g.fillText(b.def.icon || '', b.x + b.w / 2, b.y + 78);
+        g.fillStyle = '#f2efe6'; g.font = font(800, b.def.label.length > 9 ? 17 : 21); g.fillText(b.def.label, b.x + b.w / 2, b.y + 142);
+        if (sel) { g.fillStyle = '#35d0ff'; g.font = font(800, 16); g.fillText('WEARING', b.x + b.w / 2, b.y + 170); }
         g.textAlign = 'left';
       } else {
         const label = b.id === 'timer' ? 'Springlock timer: ' + (s.timer ? 'ON' : 'OFF') : b.id === 'mirror' ? 'Mirror: ' + (s.mirror ? 'ON' : 'OFF') : b.label;
@@ -59,7 +59,7 @@ export class Menu {
     g.fillText(s.status, 38, 640);
     g.fillStyle = '#9fb0c2'; g.font = font(600, 21);
     g.fillText('Open this menu any time with the ≡ button on your left hand (or the Y button).', 38, 690);
-    g.fillText('Left stick walks • right stick snap-turns • the springlocks snap 1:30 after you put a morph on.', 38, 722);
+    g.fillText('Left stick walks • right stick snap-turns • Foxy: hold GRIP on a wall to climb.', 38, 722);
     this.tex.needsUpdate = true; this.dirty = false;
   }
   open(headPos, headQuat) {
