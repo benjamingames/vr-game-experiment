@@ -10,13 +10,13 @@ Normal visitors on a non-VR browser only see a "VR only" message. Developers can
 | `js/morph.js` | `Morph`: a rigged GLB you wear. Head follows the headset, arms use two-bone IK to the controllers, legs walk, head meshes are hidden in first person. Springlock failure animation. `MORPH_DEFS` is the morph list. |
 | `js/ui.js` | The in-VR menu panel and the 3-lines wrist button (it also shows the countdown). |
 | `js/nav.js` | Walls / furniture / floor height baked into a 2D grid from the map triangles. |
-| `js/audio.js` | The springlock CRUNCH (`models/springlock-crunch.mp3`), plays `models/springlock-failure.mp3` as the laugh, reads its loudness to drive the jaw and the shake. |
-| `models/` | `map.glb`, `springbonnie.glb`, `springtrap.glb` (slimmed with gltf-transform: welded, simplified, WebP textures, spec-gloss converted to metal-rough), `springlock-failure.mp3`, `springlock-crunch.mp3`. |
+| `js/audio.js` | Plays `models/springlock-failure.mp3` (it already contains the snap/crunch and the laugh), reads its loudness to drive the jaw and the shake. |
+| `models/` | `map.glb`, `springbonnie.glb`, `springtrap.glb` (slimmed with gltf-transform: welded, simplified, WebP textures, spec-gloss converted to metal-rough), `springlock-failure.mp3`. |
 
 ## Playing
 - Open the menu with the **3 lines** button floating over your left hand (poke it with your right hand, or point and pull the trigger). **Y** also opens it.
 - Pick a morph with a controller ray + trigger. The menu also has the springlock timer toggle, "Springlock NOW", a mirror, height recalibration and "Back to start".
-- **Springlock failure:** 1 minute 30 seconds after you put Spring Bonnie or Springtrap on, the locks snap (synth snap sounds), the suit plates burst outward, the mp3 laugh plays and the suit shakes with it, then everything settles back and play goes on. The timer restarts after each one.
+- **Springlock failure:** 1 minute 30 seconds after you put Spring Bonnie or Springtrap on, the locks snap, the suit plates burst outward, the mp3 laugh plays and the suit shakes with it, then everything settles back and play goes on. The timer restarts after each one.
 
 ## Adding a morph
 Drop the rigged `.glb` in `models/`, add an entry to `MORPH_DEFS` in `js/morph.js`. Bones are found by name (`bip_head`, `bip_upperarm_L`, `bip_hand_L`, `bip_hip_L`, ...). Rigid plates parented to bones are what burst out in the springlock animation. Replace the map by swapping `models/map.glb` (change `SPAWN` in `main.js`).

@@ -106,7 +106,7 @@ function setStatus(t) { menu.set('status', t); S.statusText = t; }
 function triggerSpringlock() {
   if (!S.morph || S.failing) return;
   S.failing = true; S.lockT = 0;
-  A.playSnap(); A.playLaugh(FAIL.laughDelay, FAIL.laugh);
+  A.playLaugh(FAIL.laughDelay, FAIL.laugh);
   S.morph.startFail(); S.mirrorMorph?.startFail();
   for (const c of ctls) buzz(c, 1, 140);
 }

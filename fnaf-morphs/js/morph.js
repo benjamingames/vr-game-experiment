@@ -42,7 +42,7 @@ const smooth = x => x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x);
 const R_L = basisQuat(new THREE.Vector3(0, 0, -1), new THREE.Vector3(-1, 0, 0), new THREE.Vector3(0, 1, 0));
 const R_R = basisQuat(new THREE.Vector3(0, 0, 1), new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0));
 
-export const FAIL = { laugh: 10, ret: 1.8, laughDelay: 0.55 };   // seconds
+export const FAIL = { laugh: 10, ret: 1.8, laughDelay: 0 };   // seconds
 FAIL.total = FAIL.laughDelay + FAIL.laugh + FAIL.ret;
 
 export class Morph {
