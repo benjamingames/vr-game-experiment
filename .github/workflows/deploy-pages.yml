@@ -7,6 +7,7 @@ name: Deploy to GitHub Pages
 #   /diggingahole/     single-file game
 #   /fnaf-repair/      static game (ES modules, no build)
 #   /boss-arena/       static game (ES modules, no build)
+#   /fnaf-morphs/      static VR-only game (ES modules, no build)
 on:
   push:
     branches: [main]
@@ -59,12 +60,13 @@ jobs:
           NODE_ENV: production
       - name: Assemble site
         run: |
-          mkdir -p _site/vr-ball-game _site/vr-ball-room-procedural _site/diggingahole _site/fnaf-repair _site/boss-arena
+          mkdir -p _site/vr-ball-game _site/vr-ball-room-procedural _site/diggingahole _site/fnaf-repair _site/boss-arena _site/fnaf-morphs
           cp -r vr-ball-game/dist/. _site/vr-ball-game/
           cp -r vr-ball-room-procedural/dist/. _site/vr-ball-room-procedural/
           cp diggingahole/index.html _site/diggingahole/index.html
           cp -r fnaf-repair/index.html fnaf-repair/js fnaf-repair/lib fnaf-repair/models _site/fnaf-repair/
           cp -r boss-arena/index.html boss-arena/js boss-arena/lib boss-arena/models _site/boss-arena/
+          cp -r fnaf-morphs/index.html fnaf-morphs/js fnaf-morphs/lib fnaf-morphs/models _site/fnaf-morphs/
           cp index.html _site/index.html
           touch _site/.nojekyll
       - uses: actions/configure-pages@v5

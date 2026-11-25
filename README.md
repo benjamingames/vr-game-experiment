@@ -12,11 +12,12 @@ Each game lives in its own folder and is published together on GitHub Pages.
 | **A Game About Digging a Hole** (single-file game: layered rock strata, instanced grass, spoil heap, spatial audio, Dig Log board, volume and graphics settings) | [`diggingahole/`](diggingahole/) | [/diggingahole/](https://benjamingames.github.io/vr-game-experiment/diggingahole/) |
 | **Animatronic Repair Shop** (collect broken animatronic parts from the pizzeria stage, rebuild them in your garage; no build step) | [`fnaf-repair/`](fnaf-repair/) | [/fnaf-repair/](https://benjamingames.github.io/vr-game-experiment/fnaf-repair/) |
 | **Boss Arena** (circular metal stage, fence and gates, smiley-ball crowd, Minecraft player vs Springtrap and the Demogorgon; no build step) | [`boss-arena/`](boss-arena/) | [/boss-arena/](https://benjamingames.github.io/vr-game-experiment/boss-arena/) |
+| **FNAF Morphs** (VR only: wear Spring Bonnie / Springtrap in the FNAF 1 pizzeria, ≡ menu to pick morphs, springlock failure after 1:30; no build step) | [`fnaf-morphs/`](fnaf-morphs/) | [/fnaf-morphs/](https://benjamingames.github.io/vr-game-experiment/fnaf-morphs/) |
 
 ## How publishing works
 
 Every push to `main` runs `.github/workflows/deploy-pages.yml`, which builds
-`vr-ball-game/` and `vr-ball-room-procedural/`, copies `diggingahole/`, `fnaf-repair/` and `boss-arena/` as-is, adds the landing page (`index.html`),
+`vr-ball-game/` and `vr-ball-room-procedural/`, copies `diggingahole/`, `fnaf-repair/`, `boss-arena/` and `fnaf-morphs/` as-is, adds the landing page (`index.html`),
 and publishes everything as one Pages site.
 
 ## Helper scripts
