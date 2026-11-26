@@ -90,7 +90,8 @@ async function selectMorph(id) {
   m.calibrate(S.eyeHeight); m.showHead(S.third && !S.inVR);
   setStatus(def.climb ? 'Hold GRIP with a hand on a wall to stab in and climb!' : '');
   S.morph = m; S.morphId = id; S.lockT = 0; S.failing = false;
-  menu.set('morph', id);
+  menu.set('morph', id); menu.set('hasMask', !!m.mask); menu.set('mask', false);
+  if (m.mask) setStatus('Hold GRIP next to your head and pull up to open the mask.');
 }
 function calibrate() {
   const h = S.inVR ? headPose().eye.y - rig.position.y : 1.6;
@@ -142,6 +143,7 @@ function onMenuButton(id) {
   else if (id === 'timer') { S.timerOn = !S.timerOn; S.lockT = 0; menu.set('timer', S.timerOn); }
   else if (id === 'springlock') { if (S.morph) { menu.close(); triggerSpringlock(); } else setStatus('Put on Spring Bonnie or Springtrap first.'); }
   else if (id === 'mirror') setMirror(!S.mirror.on);
+  else if (id === 'mask') { if (S.morph?.mask) { const v = S.morph.mask.target < 0.5 ? 1 : 0; S.morph.setMask(v); menu.set('mask', !!v); } }
   else if (id === 'calibrate') calibrate();
   else if (id === 'spawn') { rig.position.copy(SPAWN); setStatus('Back at the start.'); }
   else if (id === 'close') menu.close();
@@ -223,6 +225,22 @@ function stepClimb(dt) {
   S.climbing = climb.climbing;
 }
 
+// ---------------- Springtrap mask: grab next to your head (grip) and pull up / down ----------------
+const maskGrab = { L: null, R: null };
+function stepMask(dt) {
+  const m = S.morph?.mask; if (!m) { maskGrab.L = maskGrab.R = null; return; }
+  const eye = headPose().eye;
+  for (const sd of ['L', 'R']) {
+    const h = handState(sd);
+    if (!h || !h.squeeze) { if (maskGrab[sd]) { const v = m.target >= 0.5 ? 1 : 0; S.morph.setMask(v); menu.set('mask', !!v); maskGrab[sd] = null; } continue; }
+    if (!maskGrab[sd]) {
+      if (h.pos.distanceTo(tmpV.copy(eye).add(tmpV2.set(0, 0.05, 0))) < 0.34) { maskGrab[sd] = { y: h.pos.y, a: m.target }; if (h.ctl) buzz(h.ctl, 0.5, 40); }
+      continue;
+    }
+    S.morph.setMask(maskGrab[sd].a + (h.pos.y - maskGrab[sd].y) / 0.22);
+  }
+}
+
 // ---------------- VR menu interaction ----------------
 function stepMenuInput(dt) {
   const head = headPose();
@@ -272,6 +290,7 @@ function gripPose(ctl) { if (!ctl?.connected) return null; const pos = new THREE
 function tick(dt) {
   stepPlayer(dt);
   stepClimb(dt);
+  stepMask(dt);
   rig.updateMatrixWorld(true);
   stepMenuInput(dt);
   // springlock countdown

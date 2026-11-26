@@ -19,16 +19,27 @@ const MANGLE = { pelvis: 'hip_bn_03', spine: 'spine_bn_026', neck: 'neck_01_bn_0
   hipL: 'l_front_leg_01_bn_06', kneeL: 'l_front_leg_02_bn_07', footL: 'l_front_leg_03_bn_08', hipR: 'r_front_leg_01_bn_012', kneeR: 'r_front_leg_02_bn_013', footR: 'r_front_leg_03_bn_014',
   rhipL: 'l_rear_leg_01_bn_09', rkneeL: 'l_rear_leg_02_bn_010', rhipR: 'r_rear_leg_01_bn_015', rkneeR: 'r_rear_leg_02_bn_016' };
 
+const GLAM = { pelvis: 'root_jnt', spine: 'spine_jnt', neck: 'neck_jnt', head: 'head_jnt', jaw: 'jaw_jnt', eyeL: 'l_eye_jnt', eyeR: 'r_eye_jnt',
+  upL: 'l_shoulder_jnt', loL: 'l_elbow_jnt', hdL: 'l_wrist_jnt', upR: 'r_shoulder_jnt', loR: 'r_elbow_jnt', hdR: 'r_wrist_jnt',
+  hipL: 'l_upperleg_jnt', kneeL: 'l_knee_jnt', footL: 'l_ankle_jnt', hipR: 'r_upperleg_jnt', kneeR: 'r_knee_jnt', footR: 'r_ankle_jnt' };
+const PUPPET = { pelvis: 'p_pelvis', spine: 'p_spine', neck: 'p_neck', head: 'p_head', eyeL: 'p_eyel', eyeR: 'p_eyer',
+  upL: 'p_upl', loL: 'p_lol', hdL: 'p_hdl', upR: 'p_upr', loR: 'p_lor', hdR: 'p_hdr',
+  hipL: 'p_hipl', kneeL: 'p_kneel', footL: 'p_footl', hipR: 'p_hipr', kneeR: 'p_kneer', footR: 'p_footr' };
+const ENDO = { ...BIP, jaw: 'bip_jaw_endo' };
+
 // Add a morph here (plus its .glb in models/) and it shows up in the menu.
 //   springlock: gets the 1:30 springlock failure.  climb: can stab its hands into walls and climb (grip button).
 export const MORPH_DEFS = [
   { id: 'springbonnie', label: 'Spring Bonnie', icon: '\u{1F430}', file: 'springbonnie.glb', color: '#e3b52a', springlock: true },
-  { id: 'springtrap', label: 'Springtrap', icon: '\u{1F430}', file: 'springtrap.glb', color: '#7d8a3a', springlock: true },
+  { id: 'springtrap', label: 'Springtrap', icon: '\u{1F430}', file: 'springtrap.glb', color: '#7d8a3a', springlock: true, mask: 'bip_mask_28' },
   { id: 'freddy', label: 'Freddy', icon: '\u{1F43B}', file: 'freddy.glb', color: '#9b6a38' },
   { id: 'bonnie', label: 'Bonnie', icon: '\u{1F430}', file: 'bonnie.glb', color: '#4f63c9', hideEndo: true },
   { id: 'chica', label: 'Chica', icon: '\u{1F414}', file: 'chica.glb', color: '#f0c419', hideEndo: true },
   { id: 'foxy', label: 'Foxy', icon: '\u{1F98A}', file: 'foxy.glb', color: '#c8402c', names: FOXY, climb: true, hookHand: 'L' },
   { id: 'mangle', label: 'Mangle', icon: '\u{1F98A}', file: 'mangle.glb', color: '#e8e2e6', names: MANGLE, keepPose: true, splitHead: true, floatHand: 'R', extraHeads: ['endo_head_bn_066'] },
+  { id: 'glamfreddy', label: 'Glam Freddy', icon: '\u{1F43B}', file: 'glamfreddy.glb', color: '#c9a227', names: GLAM },
+  { id: 'puppet', label: 'Puppet', icon: '\u{1F3AD}', file: 'puppet.glb', color: '#e9e2b8', names: PUPPET, autoRig: 'puppet' },
+  { id: 'endo', label: 'Endo', icon: '\u{1F916}', file: 'endo.glb', color: '#8c96a3', names: ENDO },
 ];
 
 const cache = new Map();
@@ -54,12 +65,61 @@ const smooth = x => x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x);
 export const FAIL = { laugh: 10, ret: 1.8, laughDelay: 0 };   // seconds
 FAIL.total = FAIL.laughDelay + FAIL.laugh + FAIL.ret;
 
+// The Puppet model has no skeleton (just rigid pieces). Build bones from its proportions and hang the pieces on them.
+// Pieces that span a joint (the sleeves, the legs) are split by triangle height so the elbow / knee can bend.
+function rigPuppet(model) {
+  model.updateMatrixWorld(true);
+  const bones = {}, P = (n, parent, x, y, z) => {
+    const b = new THREE.Bone(); b.name = n; (parent || model).add(b);
+    const base = parent ? parent.getWorldPosition(new THREE.Vector3()) : new THREE.Vector3(); b.position.set(x, y, z).sub(base); bones[n] = b; return b;
+  };
+  const cx = -0.05;
+  const pel = P('p_pelvis', null, cx, 3.5, 0), spn = P('p_spine', pel, cx, 4.6, 0), nck = P('p_neck', spn, cx, 5.8, 0), hed = P('p_head', nck, cx, 6.05, 0);
+  P('p_eyel', hed, cx + 0.2, 6.68, 0.32); P('p_eyer', hed, cx - 0.2, 6.68, 0.32);
+  for (const [sd, sg] of [['l', 1], ['r', -1]]) {
+    const up = P('p_up' + sd, spn, cx + sg * 0.2, 5.45, 0), lo = P('p_lo' + sd, up, cx + sg * 0.75, 4.4, 0), hd = P('p_hd' + sd, lo, cx + sg * 1.32, 3.4, 0);
+    P('p_tip' + sd, hd, cx + sg * 1.4, 2.5, 0);
+    const hip = P('p_hip' + sd, pel, cx + sg * 0.3, 3.4, 0), kn = P('p_knee' + sd, hip, cx + sg * 0.33, 1.85, 0); P('p_foot' + sd, kn, cx + sg * 0.33, 0.12, 0);
+  }
+  const meshes = []; model.traverse(o => { if (o.isMesh) meshes.push(o); else if (o.isLine || o.isPoints) o.visible = false; });   // (the model ships a floor ring line)
+  const box = new THREE.Box3(), c = new THREE.Vector3(), tmp = new THREE.Vector3();
+  const attach = (m, bone) => { bone.attach(m); };
+  const splitBy = (m, key) => {   // key(centroid) -> bone; builds one mesh per bone from the triangles
+    const g = m.geometry, pos = g.attributes.position, idx = g.index ? g.index.array : null, n = idx ? idx.length : pos.count, groups = new Map();
+    for (let t = 0; t < n; t += 3) {
+      const a = idx ? idx[t] : t, b = idx ? idx[t + 1] : t + 1, d = idx ? idx[t + 2] : t + 2;
+      tmp.set(0, 0, 0); for (const i of [a, b, d]) tmp.add(c.fromBufferAttribute(pos, i)); tmp.divideScalar(3).applyMatrix4(m.matrixWorld);
+      const k = key(tmp); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(a, b, d);
+    }
+    for (const [k, list] of groups) {
+      const ng = new THREE.BufferGeometry(); for (const nm in g.attributes) ng.setAttribute(nm, g.attributes[nm]); ng.setIndex(list);
+      const m2 = new THREE.Mesh(ng, m.material); m2.frustumCulled = false; m2.applyMatrix4(m.matrixWorld); model.add(m2); m2.updateMatrixWorld(true); attach(m2, bones[k]);
+    }
+    m.visible = false; m.parent.remove(m);
+  };
+  for (const m of meshes) {
+    box.setFromObject(m); box.getCenter(c);
+    if (box.max.x - box.min.x > 3 && box.max.y - box.min.y < 0.05) { m.visible = false; continue; }   // the floor disc that comes with the model
+    const sd = c.x > cx ? 'l' : 'r', ay = Math.abs(c.x - cx);
+    if (c.y > 6.0) attach(m, bones.p_head);
+    else if (ay > 0.45 && c.y > 2.3) {                                   // arms
+      if (box.max.y - box.min.y > 2.5) splitBy(m, p => p.y > 4.45 ? 'p_up' + sd : p.y > 3.4 ? 'p_lo' + sd : 'p_hd' + sd);
+      else attach(m, bones['p_lo' + sd]);
+    } else if (c.y < 2.5 || ay > 0.1 && c.y < 3.8 && box.min.y < 0.5) {  // legs
+      if (box.max.y - box.min.y > 3) splitBy(m, p => p.y > 1.9 ? 'p_hip' + sd : 'p_knee' + sd);
+      else attach(m, bones['p_knee' + sd]);
+    } else if (box.min.y < 0.5 && box.max.y > 3) splitBy(m, p => p.y > 1.9 ? 'p_hip' + (p.x > cx ? 'l' : 'r') : 'p_knee' + (p.x > cx ? 'l' : 'r'));
+    else attach(m, bones.p_spine);
+  }
+}
+
 export class Morph {
   constructor(def, gltf) {
     this.def = def;
     this.root = new THREE.Group();              // positioned / scaled / yawed every frame
     this.model = SkeletonUtils.clone(gltf.scene);
     this.root.add(this.model);
+    if (def.autoRig === 'puppet') rigPuppet(this.model);
     this.model.traverse(o => { if (o.isMesh) { o.frustumCulled = false; if (o.material) o.material.side = THREE.FrontSide; } });
     this.root.updateMatrixWorld(true);
     this.bones = {};
@@ -92,6 +152,7 @@ export class Morph {
     this.setupHeadHiding(all);
     this.parts = []; if (def.springlock) this.setupParts();
     if (def.climb) this.setupHooks();
+    if (def.mask) this.setupMask();
     this.showHead(true);
   }
   eyeWorld(out) {
@@ -135,6 +196,26 @@ export class Morph {
   }
   // The head is hidden from your own eyes by moving it to layer 5, which only mirrors / reflections look at.
   showHead(v) { for (const m of this.headMeshes) m.layers.set(v ? 0 : 5); }
+
+  // Springtrap's face mask hinges up over the head (pull up on it) and shows the red head underneath.
+  setupMask() {
+    const node = this.model.getObjectByName(this.def.mask); if (!node) return;
+    this.model.updateMatrixWorld(true);
+    const par = node.parent, bb = new THREE.Box3(), pts = [], box = new THREE.Box3().setFromObject(node);
+    for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) pts.push(par.worldToLocal(new THREE.Vector3(x, y, z)));
+    bb.setFromPoints(pts);
+    const pivot = new THREE.Vector3((bb.min.x + bb.max.x) / 2, bb.max.y, bb.min.z + (bb.max.z - bb.min.z) * 0.3);
+    this.mask = { node, pos: node.position.clone(), quat: node.quaternion.clone(), pivot, amt: 0, target: 0 };
+  }
+  setMask(v) { if (this.mask) this.mask.target = THREE.MathUtils.clamp(v, 0, 1); }
+  get maskAmount() { return this.mask ? this.mask.amt : 0; }
+  applyMask(dt) {
+    const m = this.mask; if (!m) return;
+    m.amt += (m.target - m.amt) * Math.min(1, dt * 9);
+    const a = -2.0 * smooth(m.amt), qr = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), a);
+    m.node.quaternion.copy(qr).multiply(m.quat);
+    m.node.position.copy(m.pos).sub(m.pivot).applyQuaternion(qr).add(m.pivot);
+  }
 
   // Rigid suit plates (meshes parented to bones). Each gets an outward direction for the springlock burst.
   setupParts() {
@@ -299,6 +380,8 @@ export class Morph {
       aim(lo, hd, S.clone().addScaledVector(dir, dist));
       setWorldQuat(hd, handQ);
     }
+
+    this.applyMask(dt);
 
     // ---- springlock plates ----
     if (f !== null) {
