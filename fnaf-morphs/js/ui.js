@@ -19,8 +19,9 @@ export class Menu {
   }
   layout() {
     const b = [];
-    MORPH_DEFS.forEach((d, i) => b.push({ id: 'morph:' + d.id, x: 36 + i * 138, y: 150, w: 130, h: 190, kind: 'card', def: d }));
-    b.push({ id: 'morph:none', x: 36 + MORPH_DEFS.length * 138, y: 150, w: 130, h: 190, kind: 'card', def: { label: 'No morph', color: '#556', icon: '?' } });
+    const n = MORPH_DEFS.length + 1, cw = Math.min(130, Math.floor((W - 72 - 8 * (n - 1)) / n)), step = cw + 8;
+    MORPH_DEFS.forEach((d, i) => b.push({ id: 'morph:' + d.id, x: 36 + i * step, y: 150, w: cw, h: 190, kind: 'card', def: d }));
+    b.push({ id: 'morph:none', x: 36 + MORPH_DEFS.length * step, y: 150, w: cw, h: 190, kind: 'card', def: { label: 'No morph', color: '#556', icon: '?' } });
     b.push({ id: 'timer', x: 36, y: 400, w: 300, h: 78, kind: 'btn' });
     b.push({ id: 'springlock', x: 356, y: 400, w: 300, h: 78, kind: 'btn', label: 'Springlock NOW' });
     b.push({ id: 'mirror', x: 676, y: 400, w: 312, h: 78, kind: 'btn' });

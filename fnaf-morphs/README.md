@@ -11,7 +11,7 @@ Normal visitors on a non-VR browser only see a "VR only" message. Developers can
 | `js/ui.js` | The in-VR menu panel and the 3-lines wrist button (it also shows the countdown). |
 | `js/nav.js` | Walls / furniture / floor height baked into a 2D grid from the map triangles. |
 | `js/audio.js` | Plays `models/springlock-failure.mp3` (it already contains the snap/crunch and the laugh), reads its loudness to drive the jaw and the shake. |
-| `models/` | `map.glb`, `springbonnie.glb`, `springtrap.glb` (slimmed with gltf-transform: welded, simplified, WebP textures, spec-gloss converted to metal-rough), `springlock-failure.mp3`, plus `foxy.glb`, `bonnie.glb`, `chica.glb`, `freddy.glb`. |
+| `models/` | `map.glb`, `springbonnie.glb`, `springtrap.glb` (slimmed with gltf-transform: welded, simplified, WebP textures, spec-gloss converted to metal-rough), `springlock-failure.mp3`, plus `foxy.glb`, `bonnie.glb`, `chica.glb`, `freddy.glb`, `mangle.glb`. |
 
 ## Playing
 - Open the menu with the **3 lines** button floating over your left hand (poke it with your right hand, or point and pull the trigger). **Y** also opens it.
@@ -26,8 +26,11 @@ Drop the rigged `.glb` in `models/`, add an entry to `MORPH_DEFS` in `js/morph.j
 
 ## Debug URL parameters (desktop preview)
 `?debug=1` shows a desktop button; WASD + mouse look, `M` menu, `1`/`2`/`0` pick a morph, `L` springlock now, `R` mirror, `V` third person.
-`?start=1` skip the menu screen, `morph=springbonnie|springtrap|freddy|bonnie|chica|foxy`, `mirror=1`, `lockat=<seconds>` (default 90), `pos=x,z`, `yaw=`, `pitch=`, `view=third`, `cam=x,y,z&camlook=x,y,z` (world coordinates).
+`?start=1` skip the menu screen, `morph=springbonnie|springtrap|freddy|bonnie|chica|foxy|mangle`, `mirror=1`, `lockat=<seconds>` (default 90), `pos=x,z`, `yaw=`, `pitch=`, `view=third`, `cam=x,y,z&camlook=x,y,z` (world coordinates).
 In the console `window.fm` exposes `step(seconds)`, `triggerSpringlock()`, `selectMorph(id)` etc.
 
 ## Not tested on a headset
 Built and checked in a headless browser only (map, collision grid, both morphs, mirror, menu, timer, failure animation). The controller-to-hand rotation offsets, the wrist button position and comfort are untested on a real Quest 3.
+
+## Mangle
+Mangle's rig is unusual, so it has special handling in `MORPH_DEFS`: the fused body mesh is split by triangle so only the Mangle head is hidden from your own eyes; the second (endo) head hangs on the side arm and turns with your head; your left controller drives the endo arm with no hand, your right controller drives the detached hand (it just floats to the controller); the rear pair of legs walks opposite the front pair.

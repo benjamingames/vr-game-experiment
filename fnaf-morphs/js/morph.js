@@ -14,6 +14,11 @@ const FOXY = { pelvis: 'pelvis', spine: 'spine_03', neck: 'neck_01', head: 'head
   hipL: 'thigh_l', kneeL: 'calf_l', footL: 'foot_l', hipR: 'thigh_r', kneeR: 'calf_r', footR: 'foot_r' };
 const norm = n => n.replace(/(_[A-Za-z0-9]+qc_skeleton)?(_\d+|_Armature)$/i, '').toLowerCase();
 
+const MANGLE = { pelvis: 'hip_bn_03', spine: 'spine_bn_026', neck: 'neck_01_bn_041', head: 'head_bn_045', jaw: 'jaw_bn_051', eyeL: 'l_eye_bn_058', eyeR: 'r_eye_bn_061',
+  upL: 'l_arm_01_bn_027', loL: 'l_arm_02_bn_028', hdL: 'l_arm_03_bn_029', upR: 'm_neck_bn_031', loR: 'm_neck_bn_031', hdR: 'm_hand_bn_032',
+  hipL: 'l_front_leg_01_bn_06', kneeL: 'l_front_leg_02_bn_07', footL: 'l_front_leg_03_bn_08', hipR: 'r_front_leg_01_bn_012', kneeR: 'r_front_leg_02_bn_013', footR: 'r_front_leg_03_bn_014',
+  rhipL: 'l_rear_leg_01_bn_09', rkneeL: 'l_rear_leg_02_bn_010', rhipR: 'r_rear_leg_01_bn_015', rkneeR: 'r_rear_leg_02_bn_016' };
+
 // Add a morph here (plus its .glb in models/) and it shows up in the menu.
 //   springlock: gets the 1:30 springlock failure.  climb: can stab its hands into walls and climb (grip button).
 export const MORPH_DEFS = [
@@ -23,6 +28,7 @@ export const MORPH_DEFS = [
   { id: 'bonnie', label: 'Bonnie', icon: '\u{1F430}', file: 'bonnie.glb', color: '#4f63c9', hideEndo: true },
   { id: 'chica', label: 'Chica', icon: '\u{1F414}', file: 'chica.glb', color: '#f0c419', hideEndo: true },
   { id: 'foxy', label: 'Foxy', icon: '\u{1F98A}', file: 'foxy.glb', color: '#c8402c', names: FOXY, climb: true, hookHand: 'L' },
+  { id: 'mangle', label: 'Mangle', icon: '\u{1F98A}', file: 'mangle.glb', color: '#e8e2e6', names: MANGLE, splitHead: true, floatHand: 'R', extraHeads: ['endo_head_bn_066'] },
 ];
 
 const cache = new Map();
@@ -82,6 +88,7 @@ export class Morph {
     const eye = this.eyeWorld(new THREE.Vector3());
     this.eyeY0 = eye.y; this.k = 1; this.bodyYaw = 0; this.phase = 0; this.fail = null; this.walk = 0;
     this.baseMin = new THREE.Box3().setFromObject(this.model).min.y;
+    this.extra = (def.extraHeads || []).map(n => all.find(b => norm(b.name) === n)).filter(Boolean).map(bone => ({ bone, q0: bone.getWorldQuaternion(new THREE.Quaternion()) }));
     this.setupHeadHiding(all);
     this.parts = []; if (def.springlock) this.setupParts();
     if (def.climb) this.setupHooks();
@@ -95,6 +102,7 @@ export class Morph {
   // Meshes that belong to the head (rigid children of head bones, or skinned meshes mostly weighted to them).
   setupHeadHiding(all) {
     const headSet = new Set(); this.bones.head.traverse(o => { if (o.isBone) headSet.add(o); }); this.headSet = headSet;
+    if (this.def.splitHead) this.splitHeadParts(headSet);
     this.headMeshes = [];
     this.model.traverse(m => {
       if (!m.isMesh) return;
@@ -105,8 +113,25 @@ export class Morph {
         let best = 0; for (let i = 1; i < acc.length; i++) if (acc[i] > acc[best]) best = i;
         inHead = headSet.has(m.skeleton.bones[best]);
       } else { for (let p = m.parent; p; p = p.parent) if (headSet.has(p)) { inHead = true; break; } }
-      if (inHead || (this.def.hideEndo && /endo/i.test(m.material?.name || ''))) this.headMeshes.push(m);   // endo is hidden from your own eyes (it shows in mirrors)
+      if (inHead || this.splitHeads?.includes(m) || (this.def.hideEndo && /endo/i.test(m.material?.name || ''))) this.headMeshes.push(m);   // endo is hidden from your own eyes (it shows in mirrors)
     });
+  }
+  // Some models fuse the head into one body mesh. Split such a mesh by triangle (by which bones they are weighted to) so only the head part gets hidden.
+  splitHeadParts(headSet) {
+    const list = []; this.model.traverse(m => { if (m.isSkinnedMesh && m.geometry.index) list.push(m); });
+    for (const m of list) {
+      const g = m.geometry, si = g.attributes.skinIndex, sw = g.attributes.skinWeight, bones = m.skeleton.bones, idx = g.index.array;
+      const inHead = new Float32Array(si.count);
+      for (let i = 0; i < si.count; i++) { let w = 0; for (let j = 0; j < 4; j++) if (headSet.has(bones[si.getComponent(i, j)])) w += sw.getComponent(i, j); inHead[i] = w; }
+      const a = [], b = [];
+      for (let t = 0; t < idx.length; t += 3) ((inHead[idx[t]] + inHead[idx[t + 1]] + inHead[idx[t + 2]]) > 1.5 ? a : b).push(idx[t], idx[t + 1], idx[t + 2]);
+      if (!a.length) continue;
+      const mk = list => { const ng = new THREE.BufferGeometry(); for (const k in g.attributes) ng.setAttribute(k, g.attributes[k]); ng.setIndex(list); ng.boundingSphere = null; return ng; };
+      const head = new THREE.SkinnedMesh(mk(a), m.material); head.name = m.name + '_head'; head.frustumCulled = false;
+      head.position.copy(m.position); head.quaternion.copy(m.quaternion); head.scale.copy(m.scale);
+      m.parent.add(head); head.updateMatrixWorld(true); head.bind(m.skeleton, m.bindMatrix);
+      m.geometry = mk(b); m.frustumCulled = false; this.splitHeads = (this.splitHeads || []).concat(head);
+    }
   }
   // The head is hidden from your own eyes by moving it to layer 5, which only mirrors / reflections look at.
   showHead(v) { for (const m of this.headMeshes) m.layers.set(v ? 0 : 5); }
@@ -227,10 +252,16 @@ export class Morph {
       rotWorld(B.hipL, leftAxis, -s * amp); rotWorld(B.hipR, leftAxis, s * amp);
       B.kneeL.updateWorldMatrix(true, false); rotWorld(B.kneeL, leftAxis, Math.max(0, Math.sin(this.phase + 1.2)) * 0.8 * this.walk);
       B.kneeR.updateWorldMatrix(true, false); rotWorld(B.kneeR, leftAxis, Math.max(0, -Math.sin(this.phase + 1.2)) * 0.8 * this.walk);
+      if (B.rhipL) {                                       // four-legged: the rear pair walks opposite the front pair
+        rotWorld(B.rhipL, leftAxis, s * amp); rotWorld(B.rhipR, leftAxis, -s * amp);
+        B.rkneeL.updateWorldMatrix(true, false); rotWorld(B.rkneeL, leftAxis, Math.max(0, -Math.sin(this.phase + 1.2)) * 0.8 * this.walk);
+        B.rkneeR.updateWorldMatrix(true, false); rotWorld(B.rkneeR, leftAxis, Math.max(0, Math.sin(this.phase + 1.2)) * 0.8 * this.walk);
+      }
     }
     // ---- head follows the headset ----
     this.root.updateMatrixWorld(true);
     setWorldQuat(B.head, _q.copy(d.headQuat).multiply(Y180).multiply(this.qHead0));
+    if (this.extra) for (const e of this.extra) { this.root.updateMatrixWorld(true); setWorldQuat(e.bone, _q.copy(d.headQuat).multiply(Y180).multiply(e.q0)); }   // second head turns with yours
     // keep the eyes exactly at the camera (the animation above moved the bones), by sliding the whole avatar
     this.root.updateMatrixWorld(true);
     this.eyeWorld(_v); this.root.position.add(_v2.copy(d.eye).sub(_v));
@@ -250,6 +281,10 @@ export class Morph {
         wrist = tgt.pos.clone().addScaledVector(Fc, -0.07);
       } else {
         wrist = pelvis.clone().addScaledVector(right, sg * 0.3 * k * 1.3).addScaledVector(fwd, 0.05).add(new THREE.Vector3(0, 0.12 * k * 1.3, 0));
+      }
+      if (this.def.floatHand === side) {                    // a detached hand (Mangle): it simply follows the controller, the arm stretches to it
+        if (tgt) { const sh = wp(up, new THREE.Vector3()), to = wrist.clone().sub(sh); if (to.length() > 1.1 * k) to.setLength(1.1 * k); hd.parent.updateWorldMatrix(true, false); hd.position.copy(hd.parent.worldToLocal(sh.add(to))); setWorldQuat(hd, handQ); }
+        continue;
       }
       const S = wp(up, new THREE.Vector3()), E = wp(lo, new THREE.Vector3()), W = wp(hd, new THREE.Vector3());
       const l1 = S.distanceTo(E), l2 = E.distanceTo(W);
