@@ -7,7 +7,7 @@ Normal visitors on a non-VR browser only see a "VR only" message. Developers can
 | File | What it does |
 |---|---|
 | `js/main.js` | Renderer, VR session, locomotion (left stick walk, right stick snap-turn), controllers + rays, the springlock timer, the mirror. |
-| `js/morph.js` | `Morph`: a rigged GLB you wear. Head follows the headset, arms use two-bone IK to the controllers, legs walk, head meshes are hidden in first person. Springlock failure animation. `MORPH_DEFS` is the morph list. |
+| `js/morph.js` | `Morph`: a rigged GLB you wear. Head follows the headset, arms use two-bone IK to the controllers, legs walk, head meshes are hidden in first person. Springlock timer + sound (the failure animation was removed). `MORPH_DEFS` is the morph list. |
 | `js/ui.js` | The in-VR menu panel and the 3-lines wrist button (it also shows the countdown). |
 | `js/nav.js` | Walls / furniture / floor height baked into a 2D grid from the map triangles. |
 | `js/audio.js` | Plays `models/springlock-failure.mp3` (it already contains the snap/crunch and the laugh), reads its loudness to drive the jaw and the shake. |
@@ -16,7 +16,7 @@ Normal visitors on a non-VR browser only see a "VR only" message. Developers can
 ## Playing
 - Open the menu with the **3 lines** button floating over your left hand (poke it with your right hand, or point and pull the trigger). **Y** also opens it.
 - Pick a morph with a controller ray + trigger. The menu also has the springlock timer toggle, "Springlock NOW", a mirror, height recalibration and "Back to start".
-- **Springlock failure:** 1 minute 30 seconds after you put Spring Bonnie or Springtrap on, the locks snap, the suit plates burst outward, the mp3 laugh plays and the suit shakes with it, then everything settles back and play goes on. The timer restarts after each one.
+- **Springlock:** 1 minute 30 seconds after you put Spring Bonnie or Springtrap on, the mp3 (snap + laugh) plays. There is no body animation for it any more. The timer restarts after each one.
 
 - **Foxy climbs:** squeeze **grip** with a hand next to a tall wall and that hand stabs in (hook on one hand, a prop hook on the other) and holds. A small hidden trigger block sits inside each hook tip, and that block is what has to touch the wall (`?showblocks=1` shows it). Pull yourself up hand over hand; let go to fall (you keep your momentum).
 - **Stage mirror:** a big real mirror on the back wall of the stage shows your morph (head included). The menu's Mirror button gives a portable one.

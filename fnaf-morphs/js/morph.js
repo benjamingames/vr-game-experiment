@@ -1,5 +1,5 @@
 // FNAF Morphs: a "morph" is a rigged animatronic model you wear. Your head, hands and walking drive the bones,
-// and the springlock failure plays on top (suit plates burst outward, the jaw and body shake with the laugh).
+// (the springlock failure only plays its sound now; the animation was removed).
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
@@ -150,7 +150,6 @@ export class Morph {
     this.baseMin = new THREE.Box3().setFromObject(this.model).min.y;
     this.extra = (def.extraHeads || []).map(n => all.find(b => norm(b.name) === n)).filter(Boolean).map(bone => ({ bone, q0: bone.getWorldQuaternion(new THREE.Quaternion()) }));
     this.setupHeadHiding(all);
-    this.parts = []; if (def.springlock) this.setupParts();
     if (def.climb) this.setupHooks();
     if (def.mask) this.setupMask();
     this.showHead(true);
@@ -217,32 +216,6 @@ export class Morph {
     m.node.position.copy(m.pos).sub(m.pivot).applyQuaternion(qr).add(m.pivot);
   }
 
-  // Rigid suit plates (meshes parented to bones). Each gets an outward direction for the springlock burst.
-  setupParts() {
-    this.parts = [];
-    const tops = new Set();
-    this.model.traverse(m => {
-      if (!m.isMesh || m.isSkinnedMesh) return;
-      let n = m; while (n.parent && !n.parent.isBone) n = n.parent;
-      if (n.parent && n.parent.isBone && !this.headSet.has(n.parent)) tops.add(n);
-    });
-    const box = new THREE.Box3();
-    for (const node of tops) {
-      const bone = node.parent; box.setFromObject(node); if (box.isEmpty()) continue;
-      const c = box.getCenter(new THREE.Vector3());
-      const child = bone.children.find(o => o.isBone);
-      let axisPt;
-      if (child) { const a = wp(bone, new THREE.Vector3()), b = wp(child, new THREE.Vector3()), ab = b.clone().sub(a), t = Math.max(0, Math.min(1, c.clone().sub(a).dot(ab) / Math.max(ab.lengthSq(), 1e-9))); axisPt = a.addScaledVector(ab, t); }
-      else axisPt = new THREE.Vector3(0, c.y, 0);
-      const dir = c.clone().sub(axisPt); dir.y *= 0.5;
-      if (dir.length() < 1e-4) dir.set(Math.random() - 0.5, 0.3, Math.random() - 0.5);
-      dir.normalize();
-      bone.updateWorldMatrix(true, false);
-      const dirLocal = dir.clone().transformDirection(bone.matrixWorld.clone().invert());
-      this.parts.push({ m: node, rest: node.position.clone(), restQ: node.quaternion.clone(), dirLocal, scale: bone.matrixWorld.getMaxScaleOnAxis(), amp: 0.07 + Math.random() * 0.1, delay: Math.random() * 0.28, axis: new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize(), tilt: (Math.random() - 0.3) * 0.5, ph: Math.random() * 6.28 });
-    }
-  }
-
   // Foxy: a steel hook for each hand (the model already has one on the left; the right gets a matching one so both hands can stab).
   setupHooks() {
     const B = this.bones, mat = new THREE.MeshStandardMaterial({ color: 0xb9c0c8, metalness: 0.95, roughness: 0.28 });
@@ -306,25 +279,8 @@ export class Morph {
     this.root.scale.setScalar(k);
     this.root.updateMatrixWorld(true);
 
-    // ---- springlock failure timeline ----
-    let f = null, laugh = 0, burst = 0, hold = 0;
-    if (this.fail) {
-      this.fail.t += dt; f = this.fail.t;
-      if (f > FAIL.total) { this.fail = null; f = null; }
-    }
-    if (f !== null) {
-      const tl = f - FAIL.laughDelay;                      // time since the laugh began
-      laugh = tl > 0 ? d.laugh : 0;
-      const endLaugh = FAIL.laughDelay + FAIL.laugh;
-      hold = 1 - smooth((f - endLaugh) / FAIL.ret);        // plates stay out while laughing, then ease back in
-      burst = hold;
-      // laughing torso: lean back, bob with the laugh loudness
-      if (B.spine) {
-        const sh = Math.sin(f * 24) * 0.05 * laugh;
-        rotWorld(B.spine, leftAxis, (-0.16 * Math.min(1, tl * 3 + 0.5) * hold) - 0.1 * laugh + sh);
-      }
-      if (B.jaw) rotWorld(B.jaw, leftAxis, 0.55 * laugh * hold + (f < 0.4 ? 0.2 * (1 - f / 0.4) : 0));
-    }
+    // the springlock failure keeps its timing (the sound plays) but has no animation
+    if (this.fail) { this.fail.t += dt; if (this.fail.t > FAIL.total) this.fail = null; }
     // ---- walking legs ----
     const sp = Math.min(1, d.speed / 1.4);
     this.phase += d.speed * dt * 2.6; this.walk += (sp - this.walk) * Math.min(1, dt * 8);
@@ -383,28 +339,6 @@ export class Morph {
 
     this.applyMask(dt);
 
-    // ---- springlock plates ----
-    if (f !== null) {
-      const ks = 1 / k;                                    // meters -> model units
-      for (const p of this.parts) {
-        const t = f - p.delay;
-        let o = 0, rot = 0;
-        if (t > 0) {
-          const rise = 1 - Math.exp(-t * 38);
-          const ring = Math.exp(-t * 3.4) * Math.cos(t * 24) * 0.45;
-          o = rise * (0.62 + 0.38 * Math.exp(-t * 2.2)) + ring * rise;
-          o += laugh * 0.16 * Math.sin(f * 41 + p.ph);       // the plates rattle with the laugh
-          o *= burst; rot = o * p.tilt;
-        }
-        const disp = p.amp * ks / p.scale * o;
-        p.m.position.copy(p.rest).addScaledVector(p.dirLocal, disp);
-        p.m.quaternion.copy(p.restQ).premultiply(_q.setFromAxisAngle(p.axis, rot));
-      }
-      this.partsDirty = true;
-    } else if (this.partsDirty) {
-      for (const p of this.parts) { p.m.position.copy(p.rest); p.m.quaternion.copy(p.restQ); }
-      this.partsDirty = false;
-    }
     this.root.updateMatrixWorld(true);
   }
 }
