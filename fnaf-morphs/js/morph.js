@@ -28,7 +28,7 @@ export const MORPH_DEFS = [
   { id: 'bonnie', label: 'Bonnie', icon: '\u{1F430}', file: 'bonnie.glb', color: '#4f63c9', hideEndo: true },
   { id: 'chica', label: 'Chica', icon: '\u{1F414}', file: 'chica.glb', color: '#f0c419', hideEndo: true },
   { id: 'foxy', label: 'Foxy', icon: '\u{1F98A}', file: 'foxy.glb', color: '#c8402c', names: FOXY, climb: true, hookHand: 'L' },
-  { id: 'mangle', label: 'Mangle', icon: '\u{1F98A}', file: 'mangle.glb', color: '#e8e2e6', names: MANGLE, splitHead: true, floatHand: 'R', extraHeads: ['endo_head_bn_066'] },
+  { id: 'mangle', label: 'Mangle', icon: '\u{1F98A}', file: 'mangle.glb', color: '#e8e2e6', names: MANGLE, keepPose: true, splitHead: true, floatHand: 'R', extraHeads: ['endo_head_bn_066'] },
 ];
 
 const cache = new Map();
@@ -273,6 +273,7 @@ export class Morph {
       const sg = side === 'L' ? -1 : 1;                    // world side relative to the body (left = -right)
       const up = B['up' + side], lo = B['lo' + side], hd = B['hd' + side];
       const tgt = d[side];
+      if (!tgt && this.def.keepPose) continue;               // keep the model's own pose until a controller drives this arm
       let handQ, wrist;
       const gq = tgt ? tgt.quat : yawQ, h0 = this.hand0[side];
       const Fc = new THREE.Vector3(0, 0, -1).applyQuaternion(gq), Nc = new THREE.Vector3(sg > 0 ? -1 : 1, 0, 0).applyQuaternion(gq);   // finger / palm direction from the controller
