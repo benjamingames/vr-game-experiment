@@ -18,7 +18,7 @@ Normal visitors on a non-VR browser only see a "VR only" message. Developers can
 - Pick a morph with a controller ray + trigger. The menu also has the springlock timer toggle, "Springlock NOW", a mirror, height recalibration and "Back to start".
 - **Springlock failure:** 1 minute 30 seconds after you put Spring Bonnie or Springtrap on, the locks snap, the suit plates burst outward, the mp3 laugh plays and the suit shakes with it, then everything settles back and play goes on. The timer restarts after each one.
 
-- **Foxy climbs:** squeeze **grip** with a hand next to a tall wall and that hand stabs in (hook on one hand, a prop hook on the other) and holds. Pull yourself up hand over hand; let go to fall (you keep your momentum).
+- **Foxy climbs:** squeeze **grip** with a hand next to a tall wall and that hand stabs in (hook on one hand, a prop hook on the other) and holds. A small hidden trigger block sits inside each hook tip, and that block is what has to touch the wall (`?showblocks=1` shows it). Pull yourself up hand over hand; let go to fall (you keep your momentum).
 - **Stage mirror:** a big real mirror on the back wall of the stage shows your morph (head included). The menu's Mirror button gives a portable one.
 
 ## Adding a morph

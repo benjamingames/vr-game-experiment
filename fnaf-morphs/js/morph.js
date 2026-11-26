@@ -20,8 +20,8 @@ export const MORPH_DEFS = [
   { id: 'springbonnie', label: 'Spring Bonnie', icon: '\u{1F430}', file: 'springbonnie.glb', color: '#e3b52a', springlock: true },
   { id: 'springtrap', label: 'Springtrap', icon: '\u{1F430}', file: 'springtrap.glb', color: '#7d8a3a', springlock: true },
   { id: 'freddy', label: 'Freddy', icon: '\u{1F43B}', file: 'freddy.glb', color: '#9b6a38' },
-  { id: 'bonnie', label: 'Bonnie', icon: '\u{1F430}', file: 'bonnie.glb', color: '#4f63c9' },
-  { id: 'chica', label: 'Chica', icon: '\u{1F414}', file: 'chica.glb', color: '#f0c419' },
+  { id: 'bonnie', label: 'Bonnie', icon: '\u{1F430}', file: 'bonnie.glb', color: '#4f63c9', hideEndo: true },
+  { id: 'chica', label: 'Chica', icon: '\u{1F414}', file: 'chica.glb', color: '#f0c419', hideEndo: true },
   { id: 'foxy', label: 'Foxy', icon: '\u{1F98A}', file: 'foxy.glb', color: '#c8402c', names: FOXY, climb: true, hookHand: 'L' },
 ];
 
@@ -105,7 +105,7 @@ export class Morph {
         let best = 0; for (let i = 1; i < acc.length; i++) if (acc[i] > acc[best]) best = i;
         inHead = headSet.has(m.skeleton.bones[best]);
       } else { for (let p = m.parent; p; p = p.parent) if (headSet.has(p)) { inHead = true; break; } }
-      if (inHead) this.headMeshes.push(m);
+      if (inHead || (this.def.hideEndo && /endo/i.test(m.material?.name || ''))) this.headMeshes.push(m);   // endo is hidden from your own eyes (it shows in mirrors)
     });
   }
   // The head is hidden from your own eyes by moving it to layer 5, which only mirrors / reflections look at.
@@ -154,8 +154,32 @@ export class Morph {
       g.quaternion.copy(hq.invert().multiply(q)); g.position.copy(new THREE.Vector3(0, 0, 0));
       hd.add(g); g.traverse(o => { if (o.isMesh) o.frustumCulled = false; });
       this.hooks[sd] = g;
+      this.addTrigger(sd, g, new THREE.Vector3(0.08 * u, -0.068 * u, 0));
     }
+    // the hook that is already part of the model: put the trigger block at the far tip of that hand's hook
+    const sd = this.def.hookHand, hd = B['hd' + sd]; if (!hd) return;
+    this.model.updateMatrixWorld(true);
+    const sub = new Set(); hd.traverse(o => { if (o.isBone) sub.add(o); });
+    const hp = wp(hd, new THREE.Vector3()), v = new THREE.Vector3(), pts = [];
+    this.model.traverse(m => {
+      if (!m.isSkinnedMesh) return;
+      const si = m.geometry.attributes.skinIndex, sw = m.geometry.attributes.skinWeight, bones = m.skeleton.bones;
+      for (let i = 0; i < si.count; i++) {
+        let w = 0; for (let j = 0; j < 4; j++) if (sub.has(bones[si.getComponent(i, j)])) w += sw.getComponent(i, j);
+        if (w > 0.8) { m.getVertexPosition(i, v); pts.push(v.clone().applyMatrix4(m.matrixWorld)); }
+      }
+    });
+    let tip = null, best = 0; for (const q of pts) { const d = q.distanceTo(hp); if (d > best) { best = d; tip = q; } }
+    if (tip) { const c = new THREE.Vector3(); for (const q of pts) c.add(q); c.divideScalar(pts.length); tip.lerp(c, 0.12); this.addTrigger(sd, hd, hd.worldToLocal(tip.clone())); }
+    else this.addTrigger(sd, hd, new THREE.Vector3());
   }
+  // a small block inside the hook; its world position is what bites into walls (invisible unless ?showblocks=1)
+  addTrigger(sd, parent, pos) {
+    const u = this.eyeY0 / 1.6, b = new THREE.Mesh(new THREE.BoxGeometry(0.03 * u, 0.03 * u, 0.03 * u), new THREE.MeshBasicMaterial({ color: 0x00ff66 }));
+    b.position.copy(pos); b.visible = /showblocks/.test(location.search); b.frustumCulled = false; parent.add(b);
+    (this.triggers ||= {})[sd] = b;
+  }
+  triggerPos(sd, out) { const b = this.triggers?.[sd]; return b ? b.getWorldPosition(out) : null; }
 
   calibrate(eyeHeight) { this.k = THREE.MathUtils.clamp(eyeHeight, 1.1, 2.1) / this.eyeY0; this.root.scale.setScalar(this.k); }
   startFail() { this.fail = { t: 0 }; this.snapped = false; }

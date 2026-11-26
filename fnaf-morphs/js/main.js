@@ -191,7 +191,7 @@ const climb = { L: null, R: null, vy: 0, air: false, climbing: false, vel: new T
 function handState(sd) {
   if (climb.fake) { const f = climb.fake[sd]; return { pos: rig.localToWorld(f.local.clone()), squeeze: f.squeeze, fake: true }; }
   const ctl = side(sd === 'L' ? 'left' : 'right'); if (!ctl) return null;
-  const p = gripPose(ctl); return { pos: p.pos, squeeze: !!ctl.gamepad?.buttons[1]?.pressed, ctl };
+  const p = gripPose(ctl), tp = S.morph?.triggerPos?.(sd, new THREE.Vector3()); return { pos: tp || p.pos, squeeze: !!ctl.gamepad?.buttons[1]?.pressed, ctl };
 }
 function stepClimb(dt) {
   const can = !!S.morph?.def.climb;
