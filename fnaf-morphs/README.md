@@ -43,3 +43,6 @@ The Puppet model came without a skeleton, so `rigPuppet()` in `js/morph.js` buil
 
 ## Chica's Party (minigame)
 Touch **Mr. Cupcake** (`models/mrcupcake.glb`, placed on the office desk) with a hand, or lean your head into him, to start. You stand on your side of a low brick wall. Cupcakes appear on your table (the cupcakes on the kids' table are decoys). Grab one (**grip or trigger**) and throw it over the wall at the kids; feed **10** kids to win. A cupcake you take comes back **3 seconds** later. The menu's **Back to start** button leaves the minigame early. Code: `js/minigame.js`; debug start: `?debug=1&start=1&mg=1`.
+
+## Security cameras
+A wall monitor above the office desk and a button panel on the desk (touch a button with a hand): **CAM 1** is the show stage, **CAM 2** is a spot of your choosing (stand where you want it, look the way you want it to face and touch **SET 2**), **CAM 3** is the office, **OFF** blanks the screen. Each feed is a live second render of the pizzeria through a static shader (noise, scan lines, rolling and tearing, a burst of static when you switch). Code: `js/cams.js`.

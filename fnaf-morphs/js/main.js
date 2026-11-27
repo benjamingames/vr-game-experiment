@@ -7,6 +7,7 @@ import { Reflector } from 'three/addons/objects/Reflector.js';
 import { Morph, MORPH_DEFS, loadMorphAsset, FAIL } from './morph.js';
 import { Menu, WristButton } from './ui.js';
 import * as A from './audio.js';
+import { SecurityCams } from './cams.js';
 import { ChicasParty, MG_ORIGIN, makeDeskProps } from './minigame.js';
 
 const Q = new URLSearchParams(location.search);
@@ -326,6 +327,13 @@ function leaveMinigame(won) {
   lastX = rig.position.x; lastZ = rig.position.z; mgCool = 3;
   setStatus(won ? 'You won Chica\'s Party! The kids loved the cupcakes.' : 'Back in the pizzeria.');
 }
+// ---------------- security cameras (wall monitor + button panel on the desk) ----------------
+const cams = new SecurityCams(scene, renderer, []);
+function stepCams(dt) {
+  cams.hide = [cams.screen, STAGE_MIRROR, ...(S.mirror.obj ? [S.mirror.obj] : [])];
+  const hp = headPose();
+  cams.update(dt, ['L', 'R'].map(rawHand).filter(Boolean).map(h => h.pos), hp.eye, hp.quat);
+}
 function stepMinigame(dt) {
   rig.updateMatrixWorld(true);
   MG.update(dt, { L: rawHand('L'), R: rawHand('R') });
@@ -333,7 +341,7 @@ function stepMinigame(dt) {
 
 function tick(dt) {
   stepPlayer(dt);
-  if (!S.mg) { stepClimb(dt); stepMask(dt); stepDeskProps(dt); } else stepMinigame(dt);
+  if (!S.mg) { stepClimb(dt); stepMask(dt); stepDeskProps(dt); stepCams(dt); } else stepMinigame(dt);
   rig.updateMatrixWorld(true);
   stepMenuInput(dt);
   // springlock countdown
@@ -410,7 +418,7 @@ renderer.setAnimationLoop(now => {
 });
 
 // scripted starts for screenshots / tests (?debug=1&morph=springtrap&mirror=1&fail=2)
-window.fm = { scene, rig, camera, nav, S, menu, climb, STAGE_MIRROR, MG, deskProps, enterMinigame, leaveMinigame, setStatus, selectMorph, triggerSpringlock, setMirror, toggleMenu, tick, headPose, calibrate,
+window.fm = { scene, rig, camera, nav, S, menu, climb, STAGE_MIRROR, MG, deskProps, cams, enterMinigame, leaveMinigame, setStatus, selectMorph, triggerSpringlock, setMirror, toggleMenu, tick, headPose, calibrate,
   step(sec, dt = 1 / 30) { for (let t = 0; t < sec; t += dt) { placeDesktopCamera(); tick(dt); } } };
 if (DEBUG) {
   if (Q.has('start')) startDesktop();
