@@ -292,7 +292,7 @@ function gripPose(ctl) { if (!ctl?.connected) return null; const pos = new THREE
 // ---------------- Chica's Party minigame ----------------
 const MG = new ChicasParty(scene);
 S.mg = false;
-const deskProps = makeDeskProps(scene, 0.77);
+const deskProps = makeDeskProps(scene, 0.77, await new GLTFLoader().loadAsync('./models/mrcupcake.glb'));
 let mgSaved = null, mgCool = 2;
 function rawHand(sd) {
   if (climb.fake) { const f = climb.fake[sd]; return { pos: rig.localToWorld(f.local.clone()), grab: !!f.squeeze }; }
@@ -300,11 +300,11 @@ function rawHand(sd) {
   const b = ctl.gamepad?.buttons; return { pos: gp.pos, grab: !!(b?.[0]?.pressed || b?.[1]?.pressed) };
 }
 function stepDeskProps(dt) {
-  mgCool -= dt; for (const d of deskProps) d.m.lookAt(camera.getWorldPosition(tmpV).setY(d.m.position.y));
+  mgCool -= dt;
   if (mgCool > 0 || !(S.inVR || S.desktop)) return;
   const head = headPose().eye, hands = ['L', 'R'].map(rawHand).filter(Boolean);
   for (const d of deskProps) {
-    const dh = head.distanceTo(d.m.position) < 0.45, dhand = hands.some(h => h.pos.distanceTo(d.m.position) < 0.2);
+    const c = d.m.position.clone(); c.y += 0.14; const dh = head.distanceTo(c) < 0.45, dhand = hands.some(h => h.pos.distanceTo(c) < 0.22);
     if (dh || dhand) { enterMinigame(d.name); return; }
   }
 }

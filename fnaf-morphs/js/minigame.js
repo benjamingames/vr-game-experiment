@@ -188,17 +188,11 @@ export class ChicasParty {
   }
 }
 
-// ---- the touch triggers on the office desk: pixel Mr. Cupcake and Carl ----
-export function makeDeskProps(scene, y) {
-  const props = [];
-  const defs = [
-    { name: 'Mr. Cupcake', x: -0.95, pal: { p: '#ff8ac8', w: '#fff', E: '#222', m: '#a3135a', b: '#8a5a2b', B: '#6d4421' } },
-    { name: 'Carl', x: -0.6, pal: { p: '#5ec8ff', w: '#fff', E: '#222', m: '#134a8a', b: '#e6a23c', B: '#b97e22' } },
-  ];
-  for (const d of defs) {
-    const rows = ['..pp.....pp...', '.pppp...pppp..', '.ppppppppppp..', 'ppppppppppppp.', 'ppEEppppEEpp..'.padEnd(14, '.'), 'ppEEppppEEpp..'.padEnd(14, '.'), 'pppppmmmpppp..'.padEnd(14, '.'), '.bbbbbbbbbbb..', '.bBbBbBbBbBb..', '..bBbBbBbBb...', '...bbbbbbbb...'];
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(0.28, 0.28 * rows.length / 14), new THREE.MeshBasicMaterial({ map: pixTex(rows, d.pal), transparent: true, alphaTest: 0.5, side: THREE.DoubleSide }));
-    m.position.set(d.x, y + 0.11, -1.28); scene.add(m); props.push({ m, name: d.name });
-  }
-  return props;
+// ---- the touch trigger on the office desk: the real Mr. Cupcake model ----
+export function makeDeskProps(scene, y, gltf) {
+  const m = gltf.scene.clone(true), box = new THREE.Box3().setFromObject(m), h = box.max.y - box.min.y, k = 0.3 / h;   // about 30 cm tall
+  const holder = new THREE.Group(); m.scale.setScalar(k); m.position.set(-(box.min.x + box.max.x) / 2 * k, -box.min.y * k, -(box.min.z + box.max.z) / 2 * k);
+  holder.add(m); holder.position.set(-0.8, y, -1.3); scene.add(holder);
+  m.traverse(o => { if (o.isMesh) o.frustumCulled = false; });
+  return [{ m: holder, name: 'Mr. Cupcake', model: true }];
 }
