@@ -7,6 +7,7 @@ import { Reflector } from 'three/addons/objects/Reflector.js';
 import { Morph, MORPH_DEFS, loadMorphAsset, FAIL } from './morph.js';
 import { Menu, WristButton } from './ui.js';
 import * as A from './audio.js';
+import { ChicasParty, MG_ORIGIN, makeDeskProps } from './minigame.js';
 
 const Q = new URLSearchParams(location.search);
 const DEBUG = Q.has('debug');                       // desktop preview for developers; the game itself is VR only
@@ -145,7 +146,7 @@ function onMenuButton(id) {
   else if (id === 'mirror') setMirror(!S.mirror.on);
   else if (id === 'mask') { if (S.morph?.mask) { const v = S.morph.mask.target < 0.5 ? 1 : 0; S.morph.setMask(v); menu.set('mask', !!v); } }
   else if (id === 'calibrate') calibrate();
-  else if (id === 'spawn') { rig.position.copy(SPAWN); setStatus('Back at the start.'); }
+  else if (id === 'spawn') { if (S.mg) { leaveMinigame(false); return; } rig.position.copy(SPAWN); setStatus('Back at the start.'); }
   else if (id === 'close') menu.close();
 }
 menu.set('timer', true);
@@ -177,8 +178,9 @@ function stepPlayer(dt) {
   if (len > 0.01) {
     const sp = keys.ShiftLeft ? 3.8 : 2.2, k = Math.min(1, len) / len * sp * dt, s = Math.sin(fwdYaw), c = Math.cos(fwdYaw);
     const nx = hx + (mx * c + mz * s) * k, nz = hz + (-mx * s + mz * c) * k;
-    const [ax, az] = nav.move(hx, hz, nx, nz, 0.22);
+    const [ax, az] = S.mg ? MG.move(hx, hz, nx, nz) : nav.move(hx, hz, nx, nz, 0.22);
     rig.position.x += ax - hx; rig.position.z += az - hz; hx = ax; hz = az;
+  } else if (S.mg) { const [ax, az] = MG.move(hx, hz, hx, hz); rig.position.x += ax - hx; rig.position.z += az - hz; hx = ax; hz = az;
   } else if (nav.hit(hx, hz, 0.22)) {   // pushed into a wall by room-scale walking: nudge back out
     const [ax, az] = nav.move(lastX, lastZ, hx, hz, 0.22); rig.position.x += ax - hx; rig.position.z += az - hz; hx = ax; hz = az;
   }
@@ -287,10 +289,51 @@ function drive(eye, quat, Lg, Rg, mirrored) {
 function handPose(sd) { if (climb.fake) { const h = handState(sd); return { pos: h.pos, quat: rig.quaternion.clone() }; } return gripPose(side(sd === 'L' ? 'left' : 'right')); }
 function gripPose(ctl) { if (!ctl?.connected) return null; const pos = new THREE.Vector3(), q = new THREE.Quaternion(); ctl.grip.getWorldPosition(pos); ctl.grip.getWorldQuaternion(q); return { pos, quat: q }; }
 
+// ---------------- Chica's Party minigame ----------------
+const MG = new ChicasParty(scene);
+S.mg = false;
+const deskProps = makeDeskProps(scene, 0.77);
+let mgSaved = null, mgCool = 2;
+function rawHand(sd) {
+  if (climb.fake) { const f = climb.fake[sd]; return { pos: rig.localToWorld(f.local.clone()), grab: !!f.squeeze }; }
+  const ctl = side(sd === 'L' ? 'left' : 'right'); if (!ctl) return null; const gp = gripPose(ctl); if (!gp) return null;
+  const b = ctl.gamepad?.buttons; return { pos: gp.pos, grab: !!(b?.[0]?.pressed || b?.[1]?.pressed) };
+}
+function stepDeskProps(dt) {
+  mgCool -= dt; for (const d of deskProps) d.m.lookAt(camera.getWorldPosition(tmpV).setY(d.m.position.y));
+  if (mgCool > 0 || !(S.inVR || S.desktop)) return;
+  const head = headPose().eye, hands = ['L', 'R'].map(rawHand).filter(Boolean);
+  for (const d of deskProps) {
+    const dh = head.distanceTo(d.m.position) < 0.45, dhand = hands.some(h => h.pos.distanceTo(d.m.position) < 0.2);
+    if (dh || dhand) { enterMinigame(d.name); return; }
+  }
+}
+function enterMinigame(who) {
+  mgSaved = { pos: rig.position.clone(), yaw: rig.rotation.y, bg: scene.background, fog: scene.fog, third: S.third };
+  menu.close(); S.mg = true; map.visible = false; STAGE_MIRROR.visible = false; if (S.mirror.obj) S.mirror.obj.visible = false;
+  scene.background = new THREE.Color(0x2a1650); scene.fog = null;
+  // stand on your side of the wall, facing it
+  camera.getWorldPosition(tmpV); camera.getWorldQuaternion(tmpQ); const f = tmpV2.set(0, 0, -1).applyQuaternion(tmpQ), yaw = Math.atan2(-f.x, -f.z);
+  rig.rotation.y -= yaw; rig.updateMatrixWorld(true); camera.getWorldPosition(tmpV2);
+  rig.position.x += MG_ORIGIN.x - tmpV2.x; rig.position.z += MG_ORIGIN.z + 0.9 - tmpV2.z; rig.position.y = MG_ORIGIN.y;
+  lastX = MG_ORIGIN.x; lastZ = MG_ORIGIN.z + 0.9; climb.vy = 0; climb.vel.set(0, 0, 0);
+  MG.onExit = won => leaveMinigame(won); MG.start();
+  setStatus(who + ' invited you to Chica\'s Party! Feed 10 kids. (Menu > Back to start leaves.)');
+}
+function leaveMinigame(won) {
+  if (!S.mg) return; S.mg = false; MG.stop(); map.visible = true; STAGE_MIRROR.visible = true; if (S.mirror.obj) S.mirror.obj.visible = S.mirror.on;
+  scene.background = mgSaved.bg; scene.fog = mgSaved.fog; rig.rotation.y = mgSaved.yaw; rig.position.copy(mgSaved.pos); rig.updateMatrixWorld(true);
+  lastX = rig.position.x; lastZ = rig.position.z; mgCool = 3;
+  setStatus(won ? 'You won Chica\'s Party! The kids loved the cupcakes.' : 'Back in the pizzeria.');
+}
+function stepMinigame(dt) {
+  rig.updateMatrixWorld(true);
+  MG.update(dt, { L: rawHand('L'), R: rawHand('R') });
+}
+
 function tick(dt) {
   stepPlayer(dt);
-  stepClimb(dt);
-  stepMask(dt);
+  if (!S.mg) { stepClimb(dt); stepMask(dt); stepDeskProps(dt); } else stepMinigame(dt);
   rig.updateMatrixWorld(true);
   stepMenuInput(dt);
   // springlock countdown
@@ -367,7 +410,7 @@ renderer.setAnimationLoop(now => {
 });
 
 // scripted starts for screenshots / tests (?debug=1&morph=springtrap&mirror=1&fail=2)
-window.fm = { scene, rig, camera, nav, S, menu, climb, STAGE_MIRROR, setStatus, selectMorph, triggerSpringlock, setMirror, toggleMenu, tick, headPose, calibrate,
+window.fm = { scene, rig, camera, nav, S, menu, climb, STAGE_MIRROR, MG, deskProps, enterMinigame, leaveMinigame, setStatus, selectMorph, triggerSpringlock, setMirror, toggleMenu, tick, headPose, calibrate,
   step(sec, dt = 1 / 30) { for (let t = 0; t < sec; t += dt) { placeDesktopCamera(); tick(dt); } } };
 if (DEBUG) {
   if (Q.has('start')) startDesktop();
@@ -375,4 +418,5 @@ if (DEBUG) {
   if (Q.has('pitch')) S.pitch = +Q.get('pitch');
   if (Q.has('morph')) await selectMorph(Q.get('morph'));
   if (Q.get('mirror') === '1') setMirror(true);
+  if (Q.get('mg') === '1') setTimeout(() => enterMinigame('Test'), 300);
 }

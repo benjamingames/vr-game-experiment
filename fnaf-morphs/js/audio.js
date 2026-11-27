@@ -49,3 +49,14 @@ export function playStab() {
   og.gain.setValueAtTime(0.8, t); og.gain.exponentialRampToValueAtTime(0.001, t + 0.12); o.connect(og).connect(master); o.start(t); o.stop(t + 0.13);
   const p = ctx.createOscillator(), pg = ctx.createGain(); p.frequency.value = 2300; pg.gain.setValueAtTime(0.12, t); pg.gain.exponentialRampToValueAtTime(0.0005, t + 0.15); p.connect(pg).connect(master); p.start(t); p.stop(t + 0.16);
 }
+
+// 8-bit style blips for the Chica's Party minigame. notes: [[freqHz, seconds], ...] played one after another.
+export function blips(notes, type = 'square', vol = 0.16) {
+  if (!ctx) return;
+  let t = ctx.currentTime;
+  for (const [f, d] of notes) {
+    const o = ctx.createOscillator(), g = ctx.createGain(); o.type = type; o.frequency.value = f;
+    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + d * 0.95); o.connect(g).connect(master); o.start(t); o.stop(t + d);
+    t += d;
+  }
+}
